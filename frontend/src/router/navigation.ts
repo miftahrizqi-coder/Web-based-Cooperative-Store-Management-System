@@ -12,6 +12,11 @@ export const navigationItems: NavigationItem[] = [
     to: '/dashboard',
     roles: ['admin', 'kasir', 'pengurus'],
   },
+  {
+    label: 'Pengguna',
+    to: '/users',
+    roles: ['admin'],
+  },
 ]
 
 export function getLandingPage(role: UserRole): string {

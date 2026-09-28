@@ -22,6 +22,14 @@ const router = createRouter({
         requiresAuth: true,
       },
     },
+    {
+      path: '/users',
+      component: () => import('../pages/users/UsersPage.vue'),
+      meta: {
+        requiresAuth: true,
+        roles: ['admin'],
+      },
+    },
   ],
 })
 
@@ -41,6 +49,15 @@ router.beforeEach(async (to) => {
   }
 
   if (to.meta.guestOnly && isAuthenticated.value) {
+    return '/dashboard'
+  }
+
+  const allowedRoles = to.meta.roles as string[] | undefined
+
+  if (
+    allowedRoles &&
+    (!currentUser.value || !allowedRoles.includes(currentUser.value.role))
+  ) {
     return '/dashboard'
   }
 
