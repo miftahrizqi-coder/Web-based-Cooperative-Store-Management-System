@@ -23,12 +23,37 @@ export function useAuth() {
 
     localStorage.removeItem('access_token')
   }
+  
+    async function restoreSession() {
+    if (!token.value) {
+        return false
+    }
 
-  return {
+    try {
+        const response = await fetch('/api/auth/me', {
+        headers: {
+            Authorization: `Bearer ${token.value}`,
+        },
+        })
+
+        if (!response.ok) {
+        clearAuth()
+        return false
+        }
+
+        currentUser.value = await response.json()
+        return true
+    } catch {
+        clearAuth()
+        return false
+    }
+    }
+    return {
     token,
     currentUser,
     isAuthenticated,
     setAuth,
     clearAuth,
-  }
+    restoreSession,
+    }
 }
