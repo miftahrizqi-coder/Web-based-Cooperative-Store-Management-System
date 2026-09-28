@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import { login } from '../../api/auth'
 
 const username = ref('')
 const password = ref('')
@@ -28,11 +29,22 @@ async function handleSubmit() {
 
   isLoading.value = true
 
-  // Placeholder sampai API login dihubungkan.
-  await new Promise((resolve) => setTimeout(resolve, 500))
+  try {
+    const result = await login(
+      username.value.trim(),
+      password.value,
+    )
 
-  isLoading.value = false
+    localStorage.setItem('access_token', result.token)
+
+    console.log('Login berhasil:', result.user)
+  } catch {
+    errorMessage.value = 'Username atau password tidak valid.'
+  } finally {
+    isLoading.value = false
+  }
 }
+
 </script>
 
 <template>
