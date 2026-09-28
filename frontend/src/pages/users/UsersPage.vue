@@ -3,7 +3,9 @@ import { onMounted, ref } from 'vue'
 import { getUsers } from '../../api/users'
 import type { User } from '../../types/user'
 import { useAuth } from '../../stores/auth'
+import { useRouter } from 'vue-router'
 
+const router = useRouter()
 const { token } = useAuth()
 
 const users = ref<User[]>([])
@@ -50,7 +52,8 @@ onMounted(() => {
       <button
         type="button"
         class="rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-gray-400"
-      >
+        @click="router.push('/users/create')"      
+        >
         Tambah pengguna
       </button>
     </div>

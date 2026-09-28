@@ -1,4 +1,13 @@
 import type { User } from '../types/user'
+import type { UserRole } from '../types/auth'
+
+interface CreateUserRequest {
+  username: string
+  email: string
+  password: string
+  name: string
+  role: UserRole
+}
 
 export async function getUsers(
   accessToken: string,
@@ -11,6 +20,30 @@ export async function getUsers(
 
   if (!response.ok) {
     throw new Error('Gagal mengambil data pengguna.')
+  }
+
+  return response.json()
+}
+
+export async function createUser(
+  accessToken: string,
+  data: CreateUserRequest,
+): Promise<User> {
+  const response = await fetch('/api/users', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify(data),
+  })
+
+  if (!response.ok) {
+    if (response.status === 409) {
+      throw new Error('Username atau email sudah digunakan.')
+    }
+
+    throw new Error('Gagal membuat pengguna.')
   }
 
   return response.json()
