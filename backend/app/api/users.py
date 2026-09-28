@@ -1,6 +1,7 @@
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, status, Depends
 from beanie import PydanticObjectId
-
+from app.core.permissions import require_role
+from app.models.user import User, UserRole
 from app.core.security import hash_password
 from app.models.user import User
 from app.schemas.user import UserCreateRequest, UserResponse, UserUpdateRequest
@@ -14,7 +15,10 @@ router = APIRouter(prefix="/api/users", tags=["Users"])
     response_model=UserResponse,
     status_code=status.HTTP_201_CREATED,
 )
-async def create_user(payload: UserCreateRequest):
+async def create_user(
+    payload: UserCreateRequest,
+    current_user: User = Depends(require_role(UserRole.ADMIN))
+    ):
     existing_username = await User.find_one(
         User.username == payload.username
     )
@@ -55,7 +59,9 @@ async def create_user(payload: UserCreateRequest):
     )
 
 @router.get("", response_model=list[UserResponse])
-async def get_users():
+async def get_users(
+    current_user: User = Depends(require_role(UserRole.ADMIN))
+    ):
     users = await User.find_all().to_list()
 
     return [
@@ -71,7 +77,10 @@ async def get_users():
     ]
 
 @router.get("/{user_id}", response_model=UserResponse)
-async def get_user(user_id: PydanticObjectId):
+async def get_user(
+    user_id: PydanticObjectId, 
+    current_user: User = Depends(require_role(UserRole.ADMIN))
+    ):
     user = await User.get(user_id)
 
     if user is None:
@@ -93,6 +102,7 @@ async def get_user(user_id: PydanticObjectId):
 async def update_user(
     user_id: PydanticObjectId,
     payload: UserUpdateRequest,
+    current_user: User = Depends(require_role(UserRole.ADMIN))
 ):
     user = await User.get(user_id)
 
@@ -130,7 +140,10 @@ async def update_user(
     )
 
 @router.delete("/{user_id}")
-async def delete_user(user_id: PydanticObjectId):
+async def delete_user(
+    user_id: PydanticObjectId,
+    current_user: User = Depends(require_role(UserRole.ADMIN))
+    ):
     user = await User.get(user_id)
 
     if user is None:
