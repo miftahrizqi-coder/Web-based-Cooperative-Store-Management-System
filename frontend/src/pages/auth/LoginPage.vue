@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { login } from '../../api/auth'
+import { login, getCurrentUser } from '../../api/auth'
+import { useAuth } from '../../stores/auth'
 
 const username = ref('')
 const password = ref('')
@@ -9,6 +10,7 @@ const errorMessage = ref('')
 
 const usernameError = ref('')
 const passwordError = ref('')
+const { setAuth } = useAuth()
 
 async function handleSubmit() {
   usernameError.value = ''
@@ -35,7 +37,9 @@ async function handleSubmit() {
       password.value,
     )
 
-    localStorage.setItem('access_token', result.token)
+    const user = await getCurrentUser(result.token)
+
+    setAuth(result.token, user)
 
     console.log('Login berhasil:', result.user)
   } catch {
