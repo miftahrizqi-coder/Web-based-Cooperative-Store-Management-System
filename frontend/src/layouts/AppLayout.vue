@@ -1,6 +1,17 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import { navigationItems } from '../router/navigation'
+import { computed, ref } from 'vue'
+import { useAuth } from '../stores/auth'
+import { getNavigationItems } from '../router/navigation'
+
+const { currentUser } = useAuth()
+
+const visibleNavigationItems = computed(() => {
+  if (!currentUser.value) {
+    return []
+  }
+
+  return getNavigationItems(currentUser.value.role)
+})
 
 const isSidebarOpen = ref(false)
 </script>
@@ -26,7 +37,7 @@ const isSidebarOpen = ref(false)
 
         <nav class="p-4">
         <RouterLink
-            v-for="item in navigationItems"
+            v-for="item in visibleNavigationItems"
             :key="item.to"
             :to="item.to"
             class="block rounded-lg px-3 py-2 text-sm font-medium hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-400"

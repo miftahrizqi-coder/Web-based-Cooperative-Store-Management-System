@@ -2,6 +2,10 @@
 import { ref } from 'vue'
 import { login, getCurrentUser } from '../../api/auth'
 import { useAuth } from '../../stores/auth'
+import { useRouter } from 'vue-router'
+import { getLandingPage } from '../../router/navigation'
+
+const router = useRouter()
 
 const username = ref('')
 const password = ref('')
@@ -40,6 +44,7 @@ async function handleSubmit() {
     const user = await getCurrentUser(result.token)
 
     setAuth(result.token, user)
+    await router.push(getLandingPage(user.role))
 
     console.log('Login berhasil:', result.user)
   } catch {

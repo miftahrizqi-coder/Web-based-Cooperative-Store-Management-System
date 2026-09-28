@@ -13,3 +13,24 @@ export const navigationItems: NavigationItem[] = [
     roles: ['admin', 'kasir', 'pengurus'],
   },
 ]
+
+export function getLandingPage(role: UserRole): string {
+  switch (role) {
+    case 'admin':
+      return '/dashboard'
+    case 'kasir':
+      return '/dashboard'
+    case 'pengurus':
+      return '/dashboard'
+    case 'anggota':
+      return '/dashboard'
+    default:
+      return '/login'
+  }
+}
+
+export function getNavigationItems(role: UserRole) {
+  return navigationItems.filter((item) =>
+    item.roles.includes(role),
+  )
+}
