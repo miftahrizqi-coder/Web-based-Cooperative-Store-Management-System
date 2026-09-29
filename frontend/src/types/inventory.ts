@@ -37,3 +37,18 @@ export interface StockMovement {
   created_by: string
   created_at: string
 }
+
+export interface StockAdjustmentPayload {
+  product_id: string
+  quantity: number
+  reason: string
+}
+
+export interface StockAdjustmentResponse {
+  product_id: string
+  quantity: number
+  stock_before: number
+  stock_after: number
+  reason: string
+  movement_id: string
+}
