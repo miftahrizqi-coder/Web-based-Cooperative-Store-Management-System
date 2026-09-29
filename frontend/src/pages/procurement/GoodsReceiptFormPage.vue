@@ -3,6 +3,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   createGoodsReceipt,
+  getGoodsReceipts,
   getPurchaseOrder,
 } from '../../api/procurement'
 import type {
@@ -33,7 +34,6 @@ const isSubmitting = ref(false)
 const errorMessage = ref('')
 const submitError = ref('')
 const validationMessage = ref('')
-
 const notes = ref('')
 
 const rows = reactive<ReceiptRow[]>([])
@@ -42,6 +42,10 @@ const purchaseOrderId = computed(
   () => String(route.params.id),
 )
 
+/**
+ * Quantity yang masih bisa diterima
+ * sebelum receipt saat ini disimpan.
+ */
 function currentRemaining(row: ReceiptRow) {
   return Math.max(
     row.orderedQuantity -
@@ -70,7 +74,8 @@ function validateRows(): string | null {
     }
 
     if (
-      row.acceptedQuantity + row.rejectedQuantity !==
+      row.acceptedQuantity +
+        row.rejectedQuantity !==
       row.receivedQuantity
     ) {
       return `Accepted + rejected untuk ${row.name} harus sama dengan received.`
@@ -93,7 +98,8 @@ function updateAcceptedFromReceived(row: ReceiptRow) {
   }
 
   row.rejectedQuantity =
-    row.receivedQuantity - row.acceptedQuantity
+    row.receivedQuantity -
+    row.acceptedQuantity
 }
 
 function updateRejectedFromReceived(row: ReceiptRow) {
@@ -102,7 +108,8 @@ function updateRejectedFromReceived(row: ReceiptRow) {
   }
 
   row.acceptedQuantity =
-    row.receivedQuantity - row.rejectedQuantity
+    row.receivedQuantity -
+    row.rejectedQuantity
 }
 
 async function loadPurchaseOrder() {
@@ -117,10 +124,14 @@ async function loadPurchaseOrder() {
   errorMessage.value = ''
 
   try {
-    const result = await getPurchaseOrder(
-      token.value,
-      purchaseOrderId.value,
-    )
+    const [result, previousReceipts] =
+      await Promise.all([
+        getPurchaseOrder(
+          token.value,
+          purchaseOrderId.value,
+        ),
+        getGoodsReceipts(token.value),
+      ])
 
     if (
       result.status !== 'ORDERED' &&
@@ -133,14 +144,50 @@ async function loadPurchaseOrder() {
 
     purchaseOrder.value = result
 
+    /**
+     * Ambil hanya Goods Receipt yang berasal
+     * dari Purchase Order ini.
+     */
+    const receiptsForPurchaseOrder =
+      previousReceipts.filter(
+        (receipt) =>
+          receipt.purchaseOrderId ===
+          purchaseOrderId.value,
+      )
+
     rows.splice(0, rows.length)
 
     for (const item of result.items) {
+      /**
+       * Previously Received dihitung berdasarkan
+       * seluruh receivedQuantity dari receipt sebelumnya.
+       *
+       * Bukan acceptedQuantity, karena quantity rejected
+       * tetap sudah diterima secara fisik dan menjadi bagian
+       * dari quantity PO yang sudah diproses.
+       */
+      const previouslyReceivedQuantity =
+        receiptsForPurchaseOrder.reduce(
+          (total, receipt) => {
+            const receiptItem = receipt.items.find(
+              (receivedItem) =>
+                receivedItem.productId ===
+                item.productId,
+            )
+
+            return (
+              total +
+              (receiptItem?.receivedQuantity ?? 0)
+            )
+          },
+          0,
+        )
+
       rows.push({
         productId: item.productId,
         name: item.name,
         orderedQuantity: item.quantity,
-        previouslyReceivedQuantity: 0,
+        previouslyReceivedQuantity,
         receivedQuantity: 0,
         acceptedQuantity: 0,
         rejectedQuantity: 0,
@@ -206,7 +253,9 @@ async function submitReceipt() {
       payload,
     )
 
-    router.push(`/goods-receipts/${receipt.id}`)
+    router.push(
+      `/goods-receipts/${receipt.id}`,
+    )
   } catch (error) {
     submitError.value =
       error instanceof Error
@@ -244,8 +293,8 @@ onMounted(loadPurchaseOrder)
       v-if="isLoading"
       class="space-y-4 rounded-xl border border-gray-200 bg-white p-6"
     >
-      <div class="h-8 animate-pulse rounded bg-gray-100" />
-      <div class="h-48 animate-pulse rounded bg-gray-100" />
+      <div class="h-8 animate-pulse rounded bg-gray-100"></div>
+      <div class="h-48 animate-pulse rounded bg-gray-100"></div>
     </div>
 
     <div
@@ -425,8 +474,8 @@ onMounted(loadPurchaseOrder)
       </section>
 
       <p class="text-sm text-gray-600">
-        Remaining setelah penerimaan dihitung dari ordered -
-        previously received - received.
+        Remaining menunjukkan quantity yang masih dapat
+        diterima sebelum penerimaan saat ini.
       </p>
 
       <section
@@ -445,7 +494,7 @@ onMounted(loadPurchaseOrder)
           rows="4"
           class="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-green-700 focus:outline-none focus:ring-2 focus:ring-green-700"
           placeholder="Catatan penerimaan barang (opsional)"
-        />
+        ></textarea>
       </section>
 
       <section
@@ -466,7 +515,11 @@ onMounted(loadPurchaseOrder)
           class="rounded-lg bg-green-800 px-4 py-2.5 text-sm font-medium text-white hover:bg-green-900 disabled:cursor-not-allowed disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-green-700 focus:ring-offset-2"
           @click="submitReceipt"
         >
-          {{ isSubmitting ? 'Menyimpan...' : 'Simpan Penerimaan' }}
+          {{
+            isSubmitting
+              ? 'Menyimpan...'
+              : 'Simpan Penerimaan'
+          }}
         </button>
       </section>
     </template>

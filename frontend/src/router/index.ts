@@ -168,6 +168,37 @@ const router = createRouter({
         roles: ['admin', 'pengurus'],
       },
     },
+    {
+      path: '/goods-receipts',
+      name: 'goods-receipts',
+      component: () => import('../pages/procurement/GoodsReceiptListPage.vue'),
+      meta: {
+        requiresAuth: true,
+        roles: ['admin', 'pengurus'],
+      },
+    },
+
+    {
+      path: '/goods-receipts/create/:id',
+      name: 'goods-receipt-create',
+      component: () =>
+        import('../pages/procurement/GoodsReceiptFormPage.vue'),
+      meta: {
+        requiresAuth: true,
+        roles: ['admin', 'pengurus'],
+      },
+    },
+
+    {
+      path: '/goods-receipts/:id',
+      name: 'goods-receipt-detail',
+      component: () =>
+        import('../pages/procurement/GoodsReceiptDetailPage.vue'),
+      meta: {
+        requiresAuth: true,
+        roles: ['admin', 'pengurus'],
+      },
+    },
   ],
 })
 

@@ -37,6 +37,11 @@ export const navigationItems: NavigationItem[] = [
     to: '/supplier-products',
     roles: ['admin', 'pengurus'],
   },
+  {
+    label: 'Penerimaan Barang',
+    to: '/goods-receipts',
+    roles: ['admin', 'pengurus'],
+  },
 ]
 
 export function getLandingPage(role: UserRole): string {
