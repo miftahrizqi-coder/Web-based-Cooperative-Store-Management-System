@@ -51,3 +51,10 @@ class SaleResponse(BaseModel):
     createdBy: str
     createdAt: datetime
     updatedAt: datetime
+
+class SaleCancelResponse(BaseModel):
+    id: str
+    saleNumber: str
+    status: SaleStatus
+    restoredStock: list[dict]
+    updatedAt: datetime

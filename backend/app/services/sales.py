@@ -10,7 +10,7 @@ from app.models.inventory import StockMovement, StockMovementType
 from app.models.product import Product
 from app.models.sales import Sale, SaleItem, SaleStatus
 from app.models.user import User, UserRole
-from app.schemas.sales import SaleCreate, SaleResponse
+from app.schemas.sales import SaleCreate, SaleResponse, SaleCancelResponse
 
 
 db = client[settings.mongodb_database]
@@ -374,3 +374,130 @@ async def get_sale_detail(
         )
 
     return sale_response(sale)
+
+async def cancel_sale(
+    sale_id: str,
+    current_user: User,
+) -> SaleCancelResponse:
+    if current_user.role not in {
+        UserRole.ADMIN,
+        UserRole.PENGURUS,
+    }:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Anda tidak memiliki akses untuk membatalkan transaksi.",
+        )
+
+    if not ObjectId.is_valid(sale_id):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Sale ID tidak valid.",
+        )
+
+    sale = await Sale.get(
+        ObjectId(sale_id)
+    )
+
+    if not sale:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Transaksi penjualan tidak ditemukan.",
+        )
+
+    if sale.status == SaleStatus.CANCELLED:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Transaksi sudah dibatalkan.",
+        )
+
+    now = datetime.now(timezone.utc)
+
+    restored_stock: list[dict] = []
+
+    async with client.start_session() as session:
+        async with await session.start_transaction():
+            for item in sale.items:
+                product = await Product.get(
+                    ObjectId(item.productId),
+                    session=session,
+                )
+
+                if not product:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail=(
+                            f"Product {item.productId} "
+                            "tidak ditemukan."
+                        ),
+                    )
+
+                stock_before = product.stock
+                stock_after = (
+                    stock_before + item.quantity
+                )
+
+                update_result = await products_collection.update_one(
+                    {
+                        "_id": ObjectId(item.productId),
+                    },
+                    {
+                        "$inc": {
+                            "stock": item.quantity,
+                        },
+                        "$set": {
+                            "updated_at": now,
+                        },
+                    },
+                    session=session,
+                )
+
+                if update_result.modified_count != 1:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail=(
+                            f"Gagal mengembalikan stok "
+                            f"product {item.name}."
+                        ),
+                    )
+
+                movement = StockMovement(
+                    productId=item.productId,
+                    type=StockMovementType.SALE_RETURN,
+                    quantity=item.quantity,
+                    stockBefore=stock_before,
+                    stockAfter=stock_after,
+                    referenceType="SALE",
+                    referenceId=str(sale.id),
+                    createdBy=str(current_user.id),
+                    createdAt=now,
+                )
+
+                await movement.insert(
+                    session=session,
+                )
+
+                restored_stock.append(
+                    {
+                        "productId": item.productId,
+                        "sku": item.sku,
+                        "name": item.name,
+                        "quantity": item.quantity,
+                        "stockBefore": stock_before,
+                        "stockAfter": stock_after,
+                    }
+                )
+
+            sale.status = SaleStatus.CANCELLED
+            sale.updatedAt = now
+
+            await sale.save(
+                session=session,
+            )
+
+    return SaleCancelResponse(
+        id=str(sale.id),
+        saleNumber=sale.saleNumber,
+        status=sale.status,
+        restoredStock=restored_stock,
+        updatedAt=sale.updatedAt,
+    )

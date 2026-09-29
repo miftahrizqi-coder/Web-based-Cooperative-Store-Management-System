@@ -14,6 +14,7 @@ class PaymentMethod(str, Enum):
 
 class SaleStatus(str, Enum):
     PAID = "PAID"
+    CANCELLED = "CANCELLED"
 
 
 class SaleItem(BaseModel):
