@@ -181,7 +181,8 @@ onMounted(() => {
               <td class="px-6 py-4">
                 <button
                   type="button"
-                  class="font-medium text-gray-700 underline-offset-4 hover:underline focus:outline-none focus:ring-2 focus:ring-gray-400"
+                  class="text-sm font-medium text-gray-700 hover:text-gray-900"
+                  @click="router.push(`/users/${user.id}/edit`)"
                 >
                   Edit
                 </button>

@@ -38,6 +38,14 @@ const router = createRouter({
         roles: ['admin'],
       },
     },
+    {
+      path: '/users/:id/edit',
+      component: () => import('../pages/users/UserEditPage.vue'),
+      meta: {
+        requiresAuth: true,
+        roles: ['admin'],
+      },
+    },
   ],
 })
 
