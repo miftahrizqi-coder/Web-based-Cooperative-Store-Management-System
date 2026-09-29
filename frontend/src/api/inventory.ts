@@ -5,6 +5,8 @@ import type {
   StockStatus,
   StockAdjustmentPayload,
   StockAdjustmentResponse,
+  StockOpnamePayload,
+  StockOpnameResponse,
 } from '../types/inventory'
 
 interface InventoryParams {
@@ -143,6 +145,34 @@ export async function createStockAdjustment(
       await getErrorMessage(
         response,
         'Gagal membuat stock adjustment.',
+      ),
+    )
+  }
+
+  return response.json()
+}
+
+export async function createStockOpname(
+  accessToken: string,
+  payload: StockOpnamePayload,
+): Promise<StockOpnameResponse> {
+  const response = await fetch(
+    '/api/inventory/stock-opname',
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify(payload),
+    },
+  )
+
+  if (!response.ok) {
+    throw new Error(
+      await getErrorMessage(
+        response,
+        'Gagal membuat stock opname.',
       ),
     )
   }

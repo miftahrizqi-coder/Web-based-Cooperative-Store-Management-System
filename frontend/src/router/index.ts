@@ -332,6 +332,16 @@ const router = createRouter({
         roles: ['admin', 'pengurus'],
       },
     },
+    {
+      path: '/inventory/stock-opname',
+      component: () =>
+        import(
+          '../pages/inventory/StockOpnamePage.vue'
+        ),
+      meta: {
+        roles: ['admin', 'pengurus'],
+      },
+    }
   ],
 })
 

@@ -81,6 +81,11 @@ export const navigationItems: NavigationItem[] = [
     label: 'Stock Adjustment',
     to: '/inventory/adjustment',
     roles: ['admin', 'pengurus'],
+  },
+  {
+    label: 'Stock Opname',
+    to: '/inventory/stock-opname',
+    roles: ['admin', 'pengurus'],
   }
 ]
 

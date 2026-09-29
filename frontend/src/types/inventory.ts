@@ -52,3 +52,28 @@ export interface StockAdjustmentResponse {
   reason: string
   movement_id: string
 }
+
+export interface StockOpnamePayload {
+  product_id: string
+  physical_stock: number
+  reason: string
+}
+
+export interface StockOpnameResponse {
+  product_id: string
+  system_stock: number
+  physical_stock: number
+  difference: number
+  reason: string
+  movement_id: string | null
+  audit_event_id: string
+}
+
+export interface StockAlert {
+  product_id: string
+  sku: string
+  name: string
+  stock: number
+  minimum_stock: number
+  status: 'LOW_STOCK' | 'OUT_OF_STOCK'
+}
