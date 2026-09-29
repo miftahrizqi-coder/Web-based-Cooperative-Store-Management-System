@@ -303,6 +303,15 @@ const router = createRouter({
         roles: ['admin', 'pengurus'],
       },
     },
+    {
+      path: '/inventory',
+      name: 'inventory',
+      component: () =>
+        import('../pages/inventory/InventoryListPage.vue'),
+      meta: {
+        roles: ['admin', 'pengurus'],
+      },
+    },
   ],
 })
 
