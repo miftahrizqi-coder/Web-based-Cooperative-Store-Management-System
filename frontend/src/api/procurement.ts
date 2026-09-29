@@ -8,6 +8,8 @@ import type {
   SupplierInvoice,
   SupplierInvoicePayload,
   SupplierPayable,
+  SupplierPayment,
+  SupplierPaymentPayload,
 } from '../types/procurement'
 
 
@@ -419,6 +421,49 @@ export async function getSupplierPayables(
       await getErrorMessage(
         response,
         'Gagal mengambil daftar hutang supplier.',
+      ),
+    )
+  }
+
+  return response.json()
+}
+
+export async function getSupplierPayments(
+  accessToken: string,
+): Promise<SupplierPayment[]> {
+  const response = await fetch('/api/supplier-payments', {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  })
+
+  if (!response.ok) {
+    throw new Error(
+      await getErrorMessage(
+        response,
+        'Gagal mengambil daftar pembayaran supplier.',
+      ),
+    )
+  }
+
+  return response.json()
+}
+
+export async function createSupplierPayment(
+  accessToken: string,
+  data: SupplierPaymentPayload,
+): Promise<SupplierPayment> {
+  const response = await fetch('/api/supplier-payments', {
+    method: 'POST',
+    headers: authHeaders(accessToken),
+    body: JSON.stringify(data),
+  })
+
+  if (!response.ok) {
+    throw new Error(
+      await getErrorMessage(
+        response,
+        'Gagal mencatat pembayaran supplier.',
       ),
     )
   }

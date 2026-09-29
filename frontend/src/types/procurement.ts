@@ -171,3 +171,32 @@ export interface SupplierPayable {
   paymentStatus: PaymentStatus
   dueDate: string
 }
+
+export type SupplierPaymentMethod =
+  | 'CASH'
+  | 'BANK_TRANSFER'
+  | 'GIRO'
+  | 'OTHER'
+
+export interface SupplierPayment {
+  id: string
+  supplierId: string
+  invoiceId: string
+  paymentNumber: string
+  amount: number
+  method: SupplierPaymentMethod
+  paymentDate: string
+  referenceNumber: string | null
+  createdBy: string
+  notes: string | null
+  createdAt: string
+}
+
+export interface SupplierPaymentPayload {
+  invoiceId: string
+  amount: number
+  method: SupplierPaymentMethod
+  paymentDate: string
+  referenceNumber: string | null
+  notes: string | null
+}

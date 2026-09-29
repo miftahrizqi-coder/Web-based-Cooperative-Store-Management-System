@@ -970,4 +970,14 @@ async def create_supplier_payment(
 
     await invoice.save()
 
+    purchase = await Purchase.find_one(
+        Purchase.receiptId == invoice.receiptId
+    )
+
+    if purchase:
+        purchase.paymentStatus = (
+            invoice.paymentStatus
+        )
+        await purchase.save()
+
     return payment
