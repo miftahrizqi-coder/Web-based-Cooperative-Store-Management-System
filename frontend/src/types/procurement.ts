@@ -54,3 +54,42 @@ export interface PurchaseOrderPayload {
   shippingCost: number
   expectedDeliveryDate: string | null
 }
+
+export interface GoodsReceiptItem {
+  productId: string
+  name: string
+  orderedQuantity: number
+  previouslyReceivedQuantity: number
+  receivedQuantity: number
+  acceptedQuantity: number
+  rejectedQuantity: number
+  rejectionReason: string | null
+}
+
+export interface GoodsReceipt {
+  id: string
+  receiptNumber: string
+  purchaseOrderId: string
+  supplierId: string
+  items: GoodsReceiptItem[]
+  receivedBy: string
+  receivedAt: string
+  notes: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface GoodsReceiptItemPayload {
+  productId: string
+  name: string
+  receivedQuantity: number
+  acceptedQuantity: number
+  rejectedQuantity: number
+  rejectionReason: string | null
+}
+
+export interface GoodsReceiptPayload {
+  purchaseOrderId: string
+  items: GoodsReceiptItemPayload[]
+  notes: string | null
+}
