@@ -75,7 +75,7 @@ async def list_products(
         pattern="^(all|available|low|out)$",
     ),
     current_user: User = Depends(
-        require_role(UserRole.ADMIN)
+        require_role(UserRole.ADMIN, UserRole.PENGURUS)
     ),
 ):
     query: dict = {}
@@ -111,7 +111,7 @@ async def list_products(
 async def get_product(
     product_id: str,
     current_user: User = Depends(
-        require_role(UserRole.ADMIN)
+        require_role(UserRole.ADMIN, UserRole.PENGURUS)
     ),
 ):
     if not ObjectId.is_valid(product_id):
