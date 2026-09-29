@@ -2,6 +2,7 @@ from beanie import init_beanie
 from pymongo import AsyncMongoClient
 
 from app.models.supplier_product import SupplierProduct
+from app.models.sales import Sale
 from app.core.config import settings
 from app.models.activity import Activity
 from app.models.product import Product
@@ -40,5 +41,6 @@ async def init_db():
             SupplierPayment,
             InventoryAuditEvent,
             StockMovement,
+            Sale,
         ],
     )
