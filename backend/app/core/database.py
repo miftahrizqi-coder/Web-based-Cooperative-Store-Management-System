@@ -2,6 +2,7 @@ from beanie import init_beanie
 from pymongo import AsyncMongoClient
 
 from app.core.config import settings
+from app.models.product import Product
 from app.models.procurement import (
     GoodsReceipt,
     Purchase,
@@ -20,6 +21,7 @@ async def init_db():
         database=client[settings.mongodb_database],
         document_models=[
             User,
+            Product,
             PurchaseOrder,
             GoodsReceipt,
             Purchase,

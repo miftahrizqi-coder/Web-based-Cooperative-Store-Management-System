@@ -17,6 +17,11 @@ export const navigationItems: NavigationItem[] = [
     to: '/users',
     roles: ['admin'],
   },
+  {
+    label: 'Produk',
+    to: '/products',
+    roles: ['admin'],
+  },
 ]
 
 export function getLandingPage(role: UserRole): string {
