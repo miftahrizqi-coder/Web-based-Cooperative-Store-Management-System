@@ -93,7 +93,13 @@ function formatCurrency(value: number): string {
 function formatStock(product: POSProduct): string {
   return `${product.stock} ${product.unit}`
 }
+function printReceipt() {
+  if (!saleSuccess.value) {
+    return
+  }
 
+  window.print()
+}
 async function focusSearch(): Promise<void> {
   await nextTick()
   searchRef.value?.focus()
@@ -1067,25 +1073,193 @@ onMounted(async () => {
               <p class="mt-1 text-sm text-green-800">
                 Kembalian:
                 <strong>
-                  {{
-                    formatCurrency(
-                      saleSuccess.changeAmount,
-                    )
-                  }}
+                  {{ formatCurrency(saleSuccess.changeAmount) }}
                 </strong>
               </p>
             </div>
           </div>
 
-          <button
-            type="button"
-            class="mt-4 min-h-11 w-full rounded-lg border border-green-300 bg-white px-4 py-2 text-sm font-semibold text-green-800 hover:bg-green-100"
-            @click="startNewSale"
+          <div class="mt-4 flex flex-col gap-3 sm:flex-row">
+            <button
+              type="button"
+              class="min-h-11 flex-1 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-emerald-700"
+              @click="printReceipt"
+            >
+              Cetak Struk
+            </button>
+
+            <button
+              type="button"
+              class="min-h-11 flex-1 rounded-lg border border-green-300 bg-white px-4 py-2 text-sm font-semibold text-green-800 transition hover:bg-green-100"
+              @click="startNewSale"
+            >
+              Transaksi Baru
+            </button>
+          </div>
+        </div>
+
+        <div
+          v-if="saleSuccess"
+          id="print-receipt"
+          class="receipt-print mx-auto mt-6 w-full max-w-sm rounded-xl border border-slate-200 bg-white p-5 text-sm text-slate-900"
+        >
+          <div class="text-center">
+            <h2 class="text-lg font-bold">
+              Koperasi Romantis
+            </h2>
+
+            <p class="mt-1 text-xs text-slate-500">
+              Struk Penjualan
+            </p>
+          </div>
+
+          <div class="my-4 border-t border-dashed border-slate-300"></div>
+
+          <div class="space-y-1 text-xs">
+            <div class="flex justify-between gap-4">
+              <span>Transaksi</span>
+              <span class="font-medium">
+                {{ saleSuccess.saleNumber }}
+              </span>
+            </div>
+
+            <div class="flex justify-between gap-4">
+              <span>Tanggal</span>
+              <span class="text-right">
+                {{ new Date(saleSuccess.createdAt).toLocaleString('id-ID') }}
+              </span>
+            </div>
+          </div>
+
+          <div class="my-4 border-t border-dashed border-slate-300"></div>
+
+          <div class="space-y-3">
+            <div
+              v-for="item in saleSuccess.items"
+              :key="`${item.productId}-${item.sku}`"
+            >
+              <div class="font-medium">
+                {{ item.name }}
+              </div>
+
+              <div class="mt-1 flex justify-between gap-4 text-xs text-slate-600">
+                <span>
+                  {{ item.quantity }}
+                  {{ item.unit }}
+                  ×
+                  {{ formatCurrency(item.unitPrice) }}
+                </span>
+
+                <span class="font-medium text-slate-900">
+                  {{ formatCurrency(item.subtotal) }}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div class="my-4 border-t border-dashed border-slate-300"></div>
+
+          <div class="space-y-2">
+            <div class="flex justify-between">
+              <span>Subtotal</span>
+              <span>
+                {{ formatCurrency(saleSuccess.subtotal) }}
+              </span>
+            </div>
+
+            <div class="flex justify-between font-bold">
+              <span>Total</span>
+              <span>
+                {{ formatCurrency(saleSuccess.total) }}
+              </span>
+            </div>
+
+            <div class="flex justify-between">
+              <span>Pembayaran</span>
+              <span>
+                {{ saleSuccess.paymentMethod }}
+              </span>
+            </div>
+
+            <div class="flex justify-between">
+              <span>Dibayar</span>
+              <span>
+                {{ formatCurrency(saleSuccess.paidAmount) }}
+              </span>
+            </div>
+
+            <div class="flex justify-between font-semibold">
+              <span>Kembalian</span>
+              <span>
+                {{ formatCurrency(saleSuccess.changeAmount) }}
+              </span>
+            </div>
+          </div>
+
+          <div
+            v-if="saleSuccess.memberId"
+            class="mt-4 border-t border-dashed border-slate-300 pt-3 text-xs"
           >
-            Transaksi Baru
-          </button>
+            <span class="text-slate-500">
+              Member:
+            </span>
+            {{ saleSuccess.memberId }}
+          </div>
+
+          <div class="mt-6 text-center text-xs text-slate-500">
+            Terima kasih telah berbelanja.
+          </div>
         </div>
       </section>
     </div>
   </div>
 </template>
+
+<style scoped>
+@media print {
+  :global(body) {
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* Sembunyikan seluruh isi halaman secara visual */
+  :global(body *) {
+    visibility: hidden !important;
+  }
+
+  /* Tampilkan receipt dan seluruh isinya */
+  #print-receipt,
+  #print-receipt * {
+    visibility: visible !important;
+  }
+
+  /* Lepaskan receipt dari layout POS */
+  #print-receipt {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+
+    display: block !important;
+
+    width: 80mm !important;
+    max-width: 80mm !important;
+
+    margin: 0 !important;
+    padding: 5mm !important;
+
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+
+    background: white !important;
+    color: black !important;
+
+    overflow: visible !important;
+  }
+
+  /* Pertahankan layout horizontal pada baris receipt */
+  #print-receipt .flex {
+    display: flex !important;
+  }
+}
+</style>
