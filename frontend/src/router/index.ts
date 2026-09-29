@@ -46,6 +46,38 @@ const router = createRouter({
         roles: ['admin'],
       },
     },
+    {
+      path: '/products',
+      component: () => import('../pages/products/ProductsPage.vue'),
+      meta: {
+        requiresAuth: true,
+        roles: ['admin'],
+      },
+    },
+    {
+      path: '/products/create',
+      component: () => import('../pages/products/ProductFormPage.vue'),
+      meta: {
+        requiresAuth: true,
+        roles: ['admin'],
+      },
+    },
+    {
+      path: '/products/:id',
+      component: () => import('../pages/products/ProductDetailPage.vue'),
+      meta: {
+        requiresAuth: true,
+        roles: ['admin'],
+      },
+    },
+    {
+      path: '/products/:id/edit',
+      component: () => import('../pages/products/ProductFormPage.vue'),
+      meta: {
+        requiresAuth: true,
+        roles: ['admin'],
+      },
+    },
   ],
 })
 
