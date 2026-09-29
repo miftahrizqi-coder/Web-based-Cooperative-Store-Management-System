@@ -13,6 +13,10 @@ from app.models.procurement import (
     SupplierInvoice,
     SupplierPayment,
 )
+from app.models.inventory import (
+    InventoryAuditEvent,
+    StockMovement,
+)
 
 
 
@@ -32,5 +36,7 @@ async def init_db():
             SupplierProduct,
             SupplierInvoice,
             SupplierPayment,
+            StockMovement,
+            InventoryAuditEvent,
         ],
     )
