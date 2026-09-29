@@ -1,7 +1,10 @@
 import type {
+  GoodsReceipt,
+  GoodsReceiptPayload,
   PurchaseOrder,
   PurchaseOrderPayload,
 } from '../types/procurement'
+
 
 function authHeaders(accessToken: string) {
   return {
@@ -190,4 +193,72 @@ export async function cancelPurchaseOrder(
     purchaseOrderId,
     'cancel',
   )
+
+}
+export async function getGoodsReceipts(
+  accessToken: string,
+): Promise<GoodsReceipt[]> {
+  const response = await fetch('/api/goods-receipts', {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  })
+
+  if (!response.ok) {
+    throw new Error(
+      await getErrorMessage(
+        response,
+        'Gagal mengambil daftar penerimaan barang.',
+      ),
+    )
+  }
+
+  return response.json()
+}
+
+export async function getGoodsReceipt(
+  accessToken: string,
+  receiptId: string,
+): Promise<GoodsReceipt> {
+  const response = await fetch(
+    `/api/goods-receipts/${receiptId}`,
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    },
+  )
+
+  if (!response.ok) {
+    throw new Error(
+      await getErrorMessage(
+        response,
+        'Gagal mengambil detail penerimaan barang.',
+      ),
+    )
+  }
+
+  return response.json()
+}
+
+export async function createGoodsReceipt(
+  accessToken: string,
+  data: GoodsReceiptPayload,
+): Promise<GoodsReceipt> {
+  const response = await fetch('/api/goods-receipts', {
+    method: 'POST',
+    headers: authHeaders(accessToken),
+    body: JSON.stringify(data),
+  })
+
+  if (!response.ok) {
+    throw new Error(
+      await getErrorMessage(
+        response,
+        'Gagal membuat penerimaan barang.',
+      ),
+    )
+  }
+
+  return response.json()
 }
