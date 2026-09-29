@@ -341,7 +341,17 @@ const router = createRouter({
       meta: {
         roles: ['admin', 'pengurus'],
       },
-    }
+    },
+    {
+      path: '/pos',
+      name: 'pos',
+      component: () =>
+        import('../pages/POS/POSPage.vue'),
+      meta: {
+        requiresAuth: true,
+        roles: ['kasir'],
+      },
+    },
   ],
 })
 
