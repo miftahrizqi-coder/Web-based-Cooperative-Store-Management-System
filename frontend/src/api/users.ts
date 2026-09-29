@@ -105,3 +105,25 @@ export async function updateUser(
 
   return response.json()
 }
+
+export async function deleteUser(
+  accessToken: string,
+  userId: string,
+): Promise<User> {
+  const response = await fetch(`/api/users/${userId}`, {
+    method: 'DELETE',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  })
+
+  if (!response.ok) {
+    if (response.status === 404) {
+      throw new Error('Pengguna tidak ditemukan.')
+    }
+
+    throw new Error('Gagal menonaktifkan pengguna.')
+  }
+
+  return response.json()
+}
