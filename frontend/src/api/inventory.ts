@@ -7,6 +7,7 @@ import type {
   StockAdjustmentResponse,
   StockOpnamePayload,
   StockOpnameResponse,
+  StockAlert,
 } from '../types/inventory'
 
 interface InventoryParams {
@@ -173,6 +174,30 @@ export async function createStockOpname(
       await getErrorMessage(
         response,
         'Gagal membuat stock opname.',
+      ),
+    )
+  }
+
+  return response.json()
+}
+
+export async function getInventoryAlerts(
+  accessToken: string,
+): Promise<StockAlert[]> {
+  const response = await fetch(
+    '/api/inventory/alerts',
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    },
+  )
+
+  if (!response.ok) {
+    throw new Error(
+      await getErrorMessage(
+        response,
+        'Gagal mengambil notifikasi stok.',
       ),
     )
   }
