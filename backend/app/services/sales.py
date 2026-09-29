@@ -301,3 +301,76 @@ async def create_sale(
         )
 
     return sale_response(saved_sale)
+
+async def list_sales(
+    current_user: User,
+) -> list[SaleResponse]:
+    if current_user.role == UserRole.KASIR:
+        sales = await Sale.find(
+            {
+                "createdBy": str(current_user.id),
+            }
+        ).sort(
+            "-createdAt"
+        ).to_list()
+
+    elif current_user.role in {
+        UserRole.ADMIN,
+        UserRole.PENGURUS,
+    }:
+        sales = await Sale.find().sort(
+            "-createdAt"
+        ).to_list()
+
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Anda tidak memiliki akses ke riwayat penjualan.",
+        )
+
+    return [
+        sale_response(sale)
+        for sale in sales
+    ]
+
+
+async def get_sale_detail(
+    sale_id: str,
+    current_user: User,
+) -> SaleResponse:
+    if not ObjectId.is_valid(sale_id):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Sale ID tidak valid.",
+        )
+
+    sale = await Sale.get(
+        ObjectId(sale_id)
+    )
+
+    if not sale:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Transaksi penjualan tidak ditemukan.",
+        )
+
+    if (
+        current_user.role == UserRole.KASIR
+        and sale.createdBy != str(current_user.id)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Kasir hanya dapat melihat transaksi yang dibuat sendiri.",
+        )
+
+    if current_user.role not in {
+        UserRole.ADMIN,
+        UserRole.PENGURUS,
+        UserRole.KASIR,
+    }:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Anda tidak memiliki akses ke detail penjualan.",
+        )
+
+    return sale_response(sale)
