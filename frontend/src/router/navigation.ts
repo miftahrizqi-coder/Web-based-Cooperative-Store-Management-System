@@ -72,6 +72,11 @@ export const navigationItems: NavigationItem[] = [
     to: '/inventory',
     roles: ['admin', 'pengurus'],
   },
+  {
+    label: 'Stock Movement',
+    to: '/inventory/movements',
+    roles: ['admin', 'pengurus'],
+  },
 ]
 
 export function getLandingPage(role: UserRole): string {

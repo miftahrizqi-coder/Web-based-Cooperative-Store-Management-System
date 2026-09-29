@@ -1,5 +1,7 @@
 import type {
   InventoryItem,
+  StockMovement,
+  StockMovementType,
   StockStatus,
 } from '../types/inventory'
 
@@ -65,6 +67,52 @@ export async function getInventory(
       await getErrorMessage(
         response,
         'Gagal mengambil data stok.',
+      ),
+    )
+  }
+
+  return response.json()
+}
+
+export async function getStockMovements(
+  accessToken: string,
+  params?: {
+    product_id?: string
+    movement_type?: StockMovementType
+  },
+): Promise<StockMovement[]> {
+  const searchParams = new URLSearchParams()
+
+  if (params?.product_id) {
+    searchParams.set(
+      'product_id',
+      params.product_id,
+    )
+  }
+
+  if (params?.movement_type) {
+    searchParams.set(
+      'movement_type',
+      params.movement_type,
+    )
+  }
+
+  const query = searchParams.toString()
+
+  const response = await fetch(
+    `/api/inventory/movements${query ? `?${query}` : ''}`,
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    },
+  )
+
+  if (!response.ok) {
+    throw new Error(
+      await getErrorMessage(
+        response,
+        'Gagal mengambil riwayat pergerakan stok.',
       ),
     )
   }

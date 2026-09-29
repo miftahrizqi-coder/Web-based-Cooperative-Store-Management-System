@@ -18,6 +18,8 @@ class InventoryResponse(BaseModel):
 class StockMovementResponse(BaseModel):
     id: str
     product_id: str
+    sku: str
+    product_name: str
     type: str
     quantity: float
     stock_before: float

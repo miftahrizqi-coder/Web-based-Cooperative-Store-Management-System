@@ -22,6 +22,8 @@ from app.schemas.inventory import (
     StockOpnameResponse,
 )
 
+from app.models.product import Product
+
 
 db = client[settings.mongodb_database]
 products_collection = db["products"]
@@ -131,10 +133,51 @@ async def list_stock_movements(
         .to_list()
     )
 
+    if not movements:
+        return []
+
+    product_ids = list({
+        movement.productId
+        for movement in movements
+    })
+
+    object_ids = []
+
+    for product_id in product_ids:
+        try:
+            object_ids.append(
+                ObjectId(product_id)
+            )
+        except Exception:
+            continue
+
+    products = await Product.find(
+        {
+            "_id": {
+                "$in": object_ids
+            }
+        }
+    ).to_list()
+
+    product_map = {
+        str(product.id): product
+        for product in products
+    }
+
     return [
         StockMovementResponse(
             id=str(movement.id),
             product_id=movement.productId,
+            sku=(
+                product_map[movement.productId].sku
+                if movement.productId in product_map
+                else "-"
+            ),
+            product_name=(
+                product_map[movement.productId].name
+                if movement.productId in product_map
+                else "Produk tidak ditemukan"
+            ),
             type=movement.type.value,
             quantity=movement.quantity,
             stock_before=movement.stockBefore,
@@ -146,7 +189,6 @@ async def list_stock_movements(
         )
         for movement in movements
     ]
-
 
 async def create_stock_adjustment(
     data: StockAdjustmentRequest,

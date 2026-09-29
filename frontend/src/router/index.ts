@@ -312,6 +312,17 @@ const router = createRouter({
         roles: ['admin', 'pengurus'],
       },
     },
+    {
+      path: '/inventory/movements',
+      name: 'stock-movements',
+      component: () =>
+        import(
+          '../pages/inventory/StockMovementListPage.vue'
+        ),
+      meta: {
+        roles: ['admin', 'pengurus'],
+      },
+    },
   ],
 })
 
