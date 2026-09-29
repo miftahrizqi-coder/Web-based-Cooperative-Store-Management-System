@@ -1,6 +1,8 @@
 import type {
   POSMember,
   POSProduct,
+  CreateSalePayload,
+  SaleResponse,
 } from '../types/pos'
 
 async function getErrorMessage(
@@ -113,6 +115,38 @@ export async function searchPOSMembers(
         'Gagal mencari anggota.',
       ),
     )
+  }
+
+  return response.json()
+}
+
+export async function createSale(
+  accessToken: string,
+  payload: CreateSalePayload,
+): Promise<SaleResponse> {
+  const response = await fetch('/api/sales', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify(payload),
+  })
+
+  if (!response.ok) {
+    let message = 'Gagal membuat transaksi penjualan.'
+
+    try {
+      const data = await response.json()
+
+      if (typeof data?.detail === 'string') {
+        message = data.detail
+      }
+    } catch {
+      // Gunakan pesan default jika response bukan JSON.
+    }
+
+    throw new Error(message)
   }
 
   return response.json()

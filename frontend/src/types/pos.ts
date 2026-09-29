@@ -44,3 +44,43 @@ export type PaymentMethod =
   | 'BANK_TRANSFER'
   | 'DEBIT'
   | 'OTHER'
+
+export interface SaleItemPayload {
+  productId: string
+  quantity: number
+}
+
+export interface CreateSalePayload {
+  items: SaleItemPayload[]
+  memberId: string | null
+  paymentMethod: PaymentMethod
+  paidAmount: number
+}
+
+export type SaleStatus = 'PAID'
+
+export interface SaleItemResponse {
+  productId: string
+  sku: string
+  name: string
+  unit: string
+  quantity: number
+  unitPrice: number
+  subtotal: number
+}
+
+export interface SaleResponse {
+  id: string
+  saleNumber: string
+  memberId: string | null
+  items: SaleItemResponse[]
+  subtotal: number
+  total: number
+  paymentMethod: PaymentMethod
+  paidAmount: number
+  changeAmount: number
+  status: SaleStatus
+  createdBy: string
+  createdAt: string
+  updatedAt: string
+}
