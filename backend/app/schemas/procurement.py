@@ -10,6 +10,7 @@ from app.models.procurement import (
 
 
 class POItemCreate(BaseModel):
+    supplierProductId: str
     productId: str
     sku: str
     name: str

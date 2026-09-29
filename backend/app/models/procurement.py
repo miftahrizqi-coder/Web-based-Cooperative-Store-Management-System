@@ -34,6 +34,7 @@ class PurchaseOrderItem(BaseModel):
     productId: str
     sku: str
     name: str
+    supplierProductId: str
     quantity: int = Field(gt=0)
     unitPrice: int = Field(ge=0)
     subtotal: int = Field(ge=0)

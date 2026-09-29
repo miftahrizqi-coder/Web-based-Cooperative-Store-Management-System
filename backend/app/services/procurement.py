@@ -3,6 +3,9 @@ from datetime import datetime, timezone
 from fastapi import HTTPException
 from pymongo import ReturnDocument
 
+from app.models.supplier import Supplier, SupplierStatus
+from app.models.supplier_product import SupplierProduct
+from app.models.product import Product
 from app.core.config import settings
 from app.core.database import client
 from app.models.procurement import (
@@ -100,6 +103,7 @@ async def create_purchase_order(
 
     items = [
         PurchaseOrderItem(
+            supplierProductId=item.supplierProductId,
             productId=item.productId,
             sku=item.sku,
             name=item.name,
@@ -126,6 +130,51 @@ async def create_purchase_order(
         updatedAt=now,
     )
 
+    supplier = await Supplier.get(purchase_order.supplierId)
+
+    if supplier is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Supplier tidak ditemukan.",
+        )
+
+    if supplier.status != SupplierStatus.ACTIVE:
+        raise HTTPException(
+            status_code=400,
+            detail="Supplier tidak aktif dan tidak dapat digunakan untuk Purchase Order baru.",
+        )
+
+    for item in payload.items:
+        supplier_product = await SupplierProduct.get(
+            item.supplierProductId
+        )
+
+        if supplier_product is None:
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    f"Product Supplier {item.supplierProductId} "
+                    "tidak ditemukan."
+                ),
+            )
+
+        if supplier_product.supplierId != payload.supplierId:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "Product Supplier tidak sesuai dengan supplier "
+                    "Purchase Order."
+                ),
+            )
+
+        if not supplier_product.isActive:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Product Supplier tidak aktif dan tidak dapat "
+                    "digunakan untuk Purchase Order baru."
+                ),
+            )
     await purchase_order.insert()
 
     return purchase_order
@@ -160,6 +209,7 @@ async def update_purchase_order(
 
     purchase_order.items = [
         PurchaseOrderItem(
+            supplierProductId=item.supplierProductId,
             productId=item.productId,
             sku=item.sku,
             name=item.name,
@@ -180,6 +230,54 @@ async def update_purchase_order(
     )
     purchase_order.updatedAt = utc_now()
 
+    supplier = await Supplier.get(payload.supplierId)
+
+    if supplier is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Supplier tidak ditemukan.",
+        )
+
+    if supplier.status != SupplierStatus.ACTIVE:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Supplier tidak aktif dan tidak dapat digunakan "
+                "untuk Purchase Order."
+            ),
+        )
+
+    for item in payload.items:
+        supplier_product = await SupplierProduct.get(
+            item.supplierProductId
+        )
+
+        if supplier_product is None:
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    f"Product Supplier {item.supplierProductId} "
+                    "tidak ditemukan."
+                ),
+            )
+
+        if supplier_product.supplierId != payload.supplierId:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "Product Supplier tidak sesuai dengan supplier "
+                    "Purchase Order."
+                ),
+            )
+
+        if not supplier_product.isActive:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Product Supplier tidak aktif dan tidak dapat "
+                    "digunakan untuk Purchase Order."
+                ),
+            )
     await purchase_order.save()
 
     return purchase_order
@@ -230,7 +328,12 @@ async def approve_purchase_order(
                 "can be approved"
             ),
         )
-
+    
+    if purchase_order.createdBy == user_id:
+        raise HTTPException(
+            status_code=403,
+            detail="Purchase Order creator cannot approve their own Purchase Order",
+        )
     purchase_order.status = POStatus.APPROVED
     purchase_order.approvedBy = user_id
     purchase_order.approvedAt = utc_now()

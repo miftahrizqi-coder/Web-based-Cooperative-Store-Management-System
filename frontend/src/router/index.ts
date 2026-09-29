@@ -1,5 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuth } from '../stores/auth'
+import SupplierProductsPage from '../pages/supplierProducts/SupplierProductsPage.vue'
+import SupplierProductFormPage from '../pages/supplierProducts/SupplierProductFormPage.vue'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -76,6 +78,94 @@ const router = createRouter({
       meta: {
         requiresAuth: true,
         roles: ['admin'],
+      },
+    },
+    {
+      path: '/purchase-orders',
+      component: () => import('../pages/procurement/PurchaseOrdersPage.vue'),
+      meta: {
+        requiresAuth: true,
+        roles: ['admin', 'pengurus'],
+      },
+    },
+    {
+      path: '/purchase-orders/create',
+      component: () => import('../pages/procurement/PurchaseOrderFromPage.vue'),
+      meta: {
+        requiresAuth: true,
+        roles: ['admin', 'pengurus'],
+      },
+    },
+    {
+      path: '/purchase-orders/:id',
+      component: () => import('../pages/procurement/PurchaseOrderDetailPage.vue'),
+      meta: {
+        requiresAuth: true,
+        roles: ['admin', 'pengurus'],
+      },
+    },
+    {
+      path: '/purchase-orders/:id/edit',
+      component: () => import('../pages/procurement/PurchaseOrderFromPage.vue'),
+      meta: {
+        requiresAuth: true,
+        roles: ['admin', 'pengurus'],
+      },
+    },
+    {
+      path: '/suppliers',
+      component: () => import('../pages/suppliers/SuppliersPage.vue'),
+      meta: {
+        requiresAuth: true,
+        roles: ['admin', 'pengurus'],
+      },
+    },
+    {
+      path: '/suppliers/create',
+      component: () => import('../pages/suppliers/SupplierFormPage.vue'),
+      meta: {
+        requiresAuth: true,
+        roles: ['admin', 'pengurus'],
+      },
+    },
+    {
+      path: '/suppliers/:id/edit',
+      component: () => import('../pages/suppliers/SupplierFormPage.vue'),
+      meta: {
+        requiresAuth: true,
+        roles: ['admin', 'pengurus'],
+      },
+    },
+    {
+      path: '/suppliers/:id',
+      component: () => import('../pages/suppliers/SupplierDetailPage.vue'),
+      meta: {
+        requiresAuth: true,
+        roles: ['admin', 'pengurus'],
+      },
+    },
+    {
+      path: '/supplier-products',
+      component: SupplierProductsPage,
+      meta: {
+        requiresAuth: true,
+        roles: ['admin', 'pengurus'],
+      },
+    },
+    {
+      path: '/supplier-products/create',
+      component: SupplierProductFormPage,
+      meta: {
+        requiresAuth: true,
+        roles: ['admin', 'pengurus'],
+      },
+    },
+    {
+      path: '/supplier-products/:id/edit',
+      component: SupplierProductFormPage,
+      meta: {
+        requiresAuth: true,
+        roles: ['admin', 'pengurus'],
       },
     },
   ],

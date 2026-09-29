@@ -22,6 +22,21 @@ export const navigationItems: NavigationItem[] = [
     to: '/products',
     roles: ['admin'],
   },
+  {
+    label: 'Purchase Order',
+    to: '/purchase-orders',
+    roles: ['admin', 'pengurus'],
+  },
+  {
+    label: 'Supplier',
+    to: '/suppliers',
+    roles: ['admin', 'pengurus'],
+  },
+  {
+    label: 'Produk Supplier',
+    to: '/supplier-products',
+    roles: ['admin', 'pengurus'],
+  },
 ]
 
 export function getLandingPage(role: UserRole): string {
