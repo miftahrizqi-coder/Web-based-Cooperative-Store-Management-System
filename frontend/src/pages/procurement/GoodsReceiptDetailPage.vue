@@ -1,8 +1,14 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { getGoodsReceipt } from '../../api/procurement'
-import type { GoodsReceipt } from '../../types/procurement'
+import {
+  getGoodsReceipt,
+  getPurchases,
+} from '../../api/procurement'
+import type {
+  GoodsReceipt,
+  Purchase,
+} from '../../types/procurement'
 import { useAuth } from '../../stores/auth'
 
 const route = useRoute()
@@ -10,8 +16,11 @@ const router = useRouter()
 const { token } = useAuth()
 
 const goodsReceipt = ref<GoodsReceipt | null>(null)
+const relatedPurchase = ref<Purchase | null>(null)
+
 const isLoading = ref(true)
 const errorMessage = ref('')
+const purchaseLoadError = ref('')
 
 const goodsReceiptId = String(route.params.id)
 
@@ -26,6 +35,18 @@ function formatDate(value: string | null) {
   }).format(new Date(value))
 }
 
+function formatCurrency(value: number) {
+  return new Intl.NumberFormat('id-ID', {
+    style: 'currency',
+    currency: 'IDR',
+    maximumFractionDigits: 0,
+  }).format(value)
+}
+
+const canCreatePurchase = computed(() => {
+  return Boolean(goodsReceipt.value && !relatedPurchase.value)
+})
+
 async function loadGoodsReceipt() {
   if (!token.value) {
     errorMessage.value =
@@ -36,12 +57,20 @@ async function loadGoodsReceipt() {
 
   isLoading.value = true
   errorMessage.value = ''
+  purchaseLoadError.value = ''
 
   try {
-    goodsReceipt.value = await getGoodsReceipt(
-      token.value,
-      goodsReceiptId,
-    )
+    const [receipt, purchases] = await Promise.all([
+      getGoodsReceipt(token.value, goodsReceiptId),
+      getPurchases(token.value),
+    ])
+
+    goodsReceipt.value = receipt
+
+    relatedPurchase.value =
+      purchases.find(
+        (purchase) => purchase.receiptId === receipt.id,
+      ) || null
   } catch (error) {
     errorMessage.value =
       error instanceof Error
@@ -50,6 +79,26 @@ async function loadGoodsReceipt() {
   } finally {
     isLoading.value = false
   }
+}
+
+function openCreatePurchase() {
+  if (!goodsReceipt.value) {
+    return
+  }
+
+  router.push(
+    `/purchases/create?receiptId=${goodsReceipt.value.id}`,
+  )
+}
+
+function openPurchaseDetail() {
+  if (!relatedPurchase.value) {
+    return
+  }
+
+  router.push(
+    `/purchases/${relatedPurchase.value.id}`,
+  )
 }
 
 onMounted(loadGoodsReceipt)
@@ -76,6 +125,29 @@ onMounted(loadGoodsReceipt)
         <p class="mt-1 text-sm text-gray-600">
           Detail penerimaan barang dari Purchase Order.
         </p>
+      </div>
+
+      <div
+        v-if="!isLoading && goodsReceipt"
+        class="flex flex-wrap gap-2"
+      >
+        <button
+          v-if="canCreatePurchase"
+          type="button"
+          class="rounded-lg bg-green-800 px-4 py-2.5 text-sm font-medium text-white hover:bg-green-900 focus:outline-none focus:ring-2 focus:ring-green-700 focus:ring-offset-2"
+          @click="openCreatePurchase"
+        >
+          Buat Purchase
+        </button>
+
+        <button
+          v-else-if="relatedPurchase"
+          type="button"
+          class="rounded-lg border border-green-700 px-4 py-2.5 text-sm font-medium text-green-800 hover:bg-green-50 focus:outline-none focus:ring-2 focus:ring-green-700 focus:ring-offset-2"
+          @click="openPurchaseDetail"
+        >
+          Lihat Purchase
+        </button>
       </div>
     </div>
 
@@ -111,6 +183,81 @@ onMounted(loadGoodsReceipt)
     </div>
 
     <template v-else-if="goodsReceipt">
+      <section
+        v-if="purchaseLoadError"
+        class="rounded-xl border border-yellow-200 bg-yellow-50 p-4"
+        role="alert"
+      >
+        <h2 class="font-semibold text-yellow-900">
+          Status Purchase belum dapat diperiksa
+        </h2>
+
+        <p class="mt-1 text-sm text-yellow-800">
+          {{ purchaseLoadError }}
+        </p>
+      </section>
+
+      <section
+        v-if="relatedPurchase"
+        class="rounded-xl border border-green-200 bg-green-50 p-6"
+      >
+        <div
+          class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
+        >
+          <div>
+            <p
+              class="text-xs font-medium uppercase tracking-wide text-green-700"
+            >
+              Purchase sudah dibuat
+            </p>
+
+            <p class="mt-1 text-lg font-semibold text-green-900">
+              {{ relatedPurchase.purchaseNumber }}
+            </p>
+
+            <p class="mt-1 text-sm text-green-800">
+              Total:
+              {{ formatCurrency(relatedPurchase.total) }}
+            </p>
+          </div>
+
+          <button
+            type="button"
+            class="rounded-lg border border-green-700 px-4 py-2.5 text-sm font-medium text-green-800 hover:bg-green-100 focus:outline-none focus:ring-2 focus:ring-green-700 focus:ring-offset-2"
+            @click="openPurchaseDetail"
+          >
+            Lihat Purchase
+          </button>
+        </div>
+      </section>
+
+      <section
+        v-else
+        class="rounded-xl border border-gray-200 bg-white p-6"
+      >
+        <div
+          class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
+        >
+          <div>
+            <h2 class="text-lg font-semibold text-gray-900">
+              Purchase
+            </h2>
+
+            <p class="mt-1 text-sm text-gray-600">
+              Goods Receipt ini belum memiliki transaksi Purchase.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            class="rounded-lg bg-green-800 px-4 py-2.5 text-sm font-medium text-white hover:bg-green-900 focus:outline-none focus:ring-2 focus:ring-green-700 focus:ring-offset-2"
+            @click="openCreatePurchase"
+          >
+            Buat Purchase
+          </button>
+        </div>
+      </section>
+
       <section
         class="rounded-xl border border-gray-200 bg-white p-6"
       >

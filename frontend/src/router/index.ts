@@ -199,6 +199,72 @@ const router = createRouter({
         roles: ['admin', 'pengurus'],
       },
     },
+    {
+      path: '/purchases',
+      name: 'purchases',
+      component: () =>
+        import('../pages/procurement/PurchaseListPage.vue'),
+      meta: {
+        requiresAuth: true,
+        roles: ['admin', 'pengurus'],
+      },
+    },
+    {
+      path: '/purchases/create',
+      name: 'purchase-create',
+      component: () =>
+        import('../pages/procurement/PurchaseCreatePage.vue'),
+      meta: {
+        requiresAuth: true,
+        roles: ['admin', 'pengurus'],
+      },
+    },
+    {
+      path: '/purchases/:id',
+      name: 'purchase-detail',
+      component: () =>
+        import('../pages/procurement/PurchaseDetailPage.vue'),
+      meta: {
+        requiresAuth: true,
+        roles: ['admin', 'pengurus'],
+      },
+    },
+    {
+      path: '/supplier-invoices',
+      name: 'supplier-invoice',
+      component: () =>
+        import(
+          '../pages/procurement/SupplierInvoiceListPage.vue'
+        ),
+      meta: {
+        requiresAuth: true,
+        roles: ['admin', 'pengurus'],
+      },
+    },
+    {
+      path: '/supplier-invoices/create',
+      name: 'supplier-invoice-create',
+      component: () =>
+        import(
+          '../pages/procurement/SupplierInvoiceCreatePage.vue'
+        ),
+      meta: {
+        requiresAuth: true,
+        roles: ['admin', 'pengurus'],
+      },
+    },
+    {
+      path: '/supplier-invoices/:id',
+      name: 'supplier-invoice-detail',
+      component: () =>
+        import(
+          '../pages/procurement/SupplierInvoiceDetailPage.vue'
+        ),
+      meta: {
+        requiresAuth: true,
+        roles: ['admin', 'pengurus'],
+      },
+    },
   ],
 })
 

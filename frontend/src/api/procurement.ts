@@ -1,8 +1,12 @@
 import type {
   GoodsReceipt,
   GoodsReceiptPayload,
+  Purchase,
   PurchaseOrder,
   PurchaseOrderPayload,
+  PurchasePayload,
+  SupplierInvoice,
+  SupplierInvoicePayload,
 } from '../types/procurement'
 
 
@@ -195,6 +199,7 @@ export async function cancelPurchaseOrder(
   )
 
 }
+
 export async function getGoodsReceipts(
   accessToken: string,
 ): Promise<GoodsReceipt[]> {
@@ -256,6 +261,142 @@ export async function createGoodsReceipt(
       await getErrorMessage(
         response,
         'Gagal membuat penerimaan barang.',
+      ),
+    )
+  }
+
+  return response.json()
+}
+
+export async function getPurchases(
+  accessToken: string,
+): Promise<Purchase[]> {
+  const response = await fetch('/api/purchases', {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  })
+
+  if (!response.ok) {
+    throw new Error(
+      await getErrorMessage(
+        response,
+        'Gagal mengambil daftar purchase.',
+      ),
+    )
+  }
+
+  return response.json()
+}
+
+export async function getPurchase(
+  accessToken: string,
+  purchaseId: string,
+): Promise<Purchase> {
+  const response = await fetch(
+    `/api/purchases/${purchaseId}`,
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    },
+  )
+
+  if (!response.ok) {
+    throw new Error(
+      await getErrorMessage(
+        response,
+        'Gagal mengambil detail purchase.',
+      ),
+    )
+  }
+
+  return response.json()
+}
+
+export async function createPurchase(
+  accessToken: string,
+  data: PurchasePayload,
+): Promise<Purchase> {
+  const response = await fetch('/api/purchases', {
+    method: 'POST',
+    headers: authHeaders(accessToken),
+    body: JSON.stringify(data),
+  })
+
+  if (!response.ok) {
+    throw new Error(
+      await getErrorMessage(
+        response,
+        'Gagal membuat purchase.',
+      ),
+    )
+  }
+
+  return response.json()
+}
+
+export async function getSupplierInvoices(
+  accessToken: string,
+): Promise<SupplierInvoice[]> {
+  const response = await fetch('/api/supplier-invoices', {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  })
+
+  if (!response.ok) {
+    throw new Error(
+      await getErrorMessage(
+        response,
+        'Gagal mengambil daftar supplier invoice.',
+      ),
+    )
+  }
+
+  return response.json()
+}
+
+export async function getSupplierInvoice(
+  accessToken: string,
+  invoiceId: string,
+): Promise<SupplierInvoice> {
+  const response = await fetch(
+    `/api/supplier-invoices/${invoiceId}`,
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    },
+  )
+
+  if (!response.ok) {
+    throw new Error(
+      await getErrorMessage(
+        response,
+        'Gagal mengambil detail supplier invoice.',
+      ),
+    )
+  }
+
+  return response.json()
+}
+
+export async function createSupplierInvoice(
+  accessToken: string,
+  data: SupplierInvoicePayload,
+): Promise<SupplierInvoice> {
+  const response = await fetch('/api/supplier-invoices', {
+    method: 'POST',
+    headers: authHeaders(accessToken),
+    body: JSON.stringify(data),
+  })
+
+  if (!response.ok) {
+    throw new Error(
+      await getErrorMessage(
+        response,
+        'Gagal membuat supplier invoice.',
       ),
     )
   }

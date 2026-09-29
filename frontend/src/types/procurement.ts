@@ -93,3 +93,70 @@ export interface GoodsReceiptPayload {
   items: GoodsReceiptItemPayload[]
   notes: string | null
 }
+
+export type PaymentStatus =
+  | 'UNPAID'
+  | 'PARTIALLY_PAID'
+  | 'PAID'
+  | 'OVERDUE'
+
+export interface PurchaseItem {
+  productId: string
+  name: string
+  quantity: number
+  price: number
+  subtotal: number
+}
+
+export interface Purchase {
+  id: string
+  purchaseNumber: string
+  supplierId: string
+  purchaseOrderId: string
+  receiptId: string
+  items: PurchaseItem[]
+  subtotal: number
+  discount: number
+  total: number
+  paymentStatus: PaymentStatus
+  createdBy: string
+  createdAt: string
+}
+
+export interface PurchasePayload {
+  receiptId: string
+  discount: number
+}
+
+export type SupplierInvoicePaymentStatus =
+  | 'UNPAID'
+  | 'PARTIALLY_PAID'
+  | 'PAID'
+  | 'OVERDUE'
+
+export interface SupplierInvoice {
+  id: string
+  invoiceNumber: string
+  supplierId: string
+  purchaseId: string
+  purchaseOrderId: string
+  receiptId: string
+  subtotal: number
+  tax: number
+  shipping: number
+  total: number
+  paymentStatus: SupplierInvoicePaymentStatus
+  invoiceDate: string
+  dueDate: string | null
+  createdBy: string
+  createdAt: string
+}
+
+export interface SupplierInvoicePayload {
+  receiptId: string
+  invoiceNumber: string
+  invoiceDate: string
+  dueDate: string
+  tax: number
+  shippingCost: number
+}
