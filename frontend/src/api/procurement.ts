@@ -7,6 +7,7 @@ import type {
   PurchasePayload,
   SupplierInvoice,
   SupplierInvoicePayload,
+  SupplierPayable,
 } from '../types/procurement'
 
 
@@ -397,6 +398,27 @@ export async function createSupplierInvoice(
       await getErrorMessage(
         response,
         'Gagal membuat supplier invoice.',
+      ),
+    )
+  }
+
+  return response.json()
+}
+
+export async function getSupplierPayables(
+  accessToken: string,
+): Promise<SupplierPayable[]> {
+  const response = await fetch('/api/supplier-payables', {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  })
+
+  if (!response.ok) {
+    throw new Error(
+      await getErrorMessage(
+        response,
+        'Gagal mengambil daftar hutang supplier.',
       ),
     )
   }

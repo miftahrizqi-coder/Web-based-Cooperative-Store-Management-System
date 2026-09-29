@@ -861,13 +861,20 @@ async def get_supplier_payables() -> list[dict]:
             0,
         )
 
+        due_date = invoice.dueDate
+
+        if due_date.tzinfo is None:
+            due_date = due_date.replace(
+                tzinfo=timezone.utc,
+            )
+
         if outstanding == 0:
             payment_status = PaymentStatus.PAID
         elif paid > 0:
             payment_status = (
                 PaymentStatus.PARTIALLY_PAID
             )
-        elif invoice.dueDate < utc_now():
+        elif due_date < utc_now():
             payment_status = PaymentStatus.OVERDUE
         else:
             payment_status = PaymentStatus.UNPAID
@@ -881,12 +888,11 @@ async def get_supplier_payables() -> list[dict]:
                 "paid": paid,
                 "outstanding": outstanding,
                 "paymentStatus": payment_status,
-                "dueDate": invoice.dueDate,
+                "dueDate": due_date,
             }
         )
 
     return result
-
 
 async def create_supplier_payment(
     payload: SupplierPaymentCreate,

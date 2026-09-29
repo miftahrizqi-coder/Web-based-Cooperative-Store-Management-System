@@ -160,3 +160,14 @@ export interface SupplierInvoicePayload {
   tax: number
   shippingCost: number
 }
+
+export interface SupplierPayable {
+  invoiceId: string
+  invoiceNumber: string
+  supplierId: string
+  total: number
+  paid: number
+  outstanding: number
+  paymentStatus: PaymentStatus
+  dueDate: string
+}

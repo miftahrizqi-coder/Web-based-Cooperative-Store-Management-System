@@ -47,6 +47,16 @@ export const navigationItems: NavigationItem[] = [
     to: '/purchases',
     roles: ['admin', 'pengurus'],
   },
+    {
+    label: 'Supplier Invoices',
+    to: '/supplier-invoices',
+    roles: ['admin', 'pengurus'],
+  },
+  {
+    label: 'Hutang Supplier',
+    to: '/supplier-payables',
+    roles: ['admin', 'pengurus'],
+  },
 ]
 
 export function getLandingPage(role: UserRole): string {

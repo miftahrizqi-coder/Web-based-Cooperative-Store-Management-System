@@ -265,6 +265,16 @@ const router = createRouter({
         roles: ['admin', 'pengurus'],
       },
     },
+    {
+      path: '/supplier-payables',
+      name: 'supplier-payables',
+      component: () =>
+        import('../pages/procurement/SupplierPayableListPage.vue'),
+      meta: {
+        requiresAuth: true,
+        roles: ['admin', 'pengurus'],
+      },
+    },
   ],
 })
 
