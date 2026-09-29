@@ -8,6 +8,7 @@ from app.models.activity import Activity
 from app.models.product import Product
 from app.models.user import User
 from app.models.supplier import Supplier
+from app.models.member import Member
 from app.models.procurement import (
     GoodsReceipt,
     Purchase,
@@ -30,6 +31,7 @@ async def init_db():
         database=client[settings.mongodb_database],
         document_models=[
             User,
+            Member,
             Activity,
             Supplier,
             Product,

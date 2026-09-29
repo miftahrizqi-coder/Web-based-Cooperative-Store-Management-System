@@ -75,11 +75,12 @@ async def list_products(
         pattern="^(all|available|low|out)$",
     ),
     current_user: User = Depends(
-        require_role(UserRole.ADMIN, UserRole.PENGURUS)
+        require_role(UserRole.ADMIN, UserRole.PENGURUS, UserRole.KASIR)
     ),
 ):
     query: dict = {}
-
+    if current_user.role == UserRole.KASIR:
+        query["is_active"] = True
     if search:
         query["$or"] = [
             {"name": {"$regex": search, "$options": "i"}},
@@ -106,12 +107,40 @@ async def list_products(
 
     return [to_response(product) for product in products]
 
+@router.get(
+    "/barcode/{barcode}",
+    response_model=ProductResponse,
+)
+async def get_product_by_barcode(
+    barcode: str,
+    current_user: User = Depends(
+        require_role(
+            UserRole.ADMIN,
+            UserRole.PENGURUS,
+            UserRole.KASIR,
+        )
+    ),
+):
+    product = await Product.find_one(
+        {
+            "barcode": barcode,
+            "is_active": True,
+        }
+    )
+
+    if not product:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Produk dengan barcode tersebut tidak ditemukan.",
+        )
+
+    return to_response(product)
 
 @router.get("/{product_id}", response_model=ProductResponse)
 async def get_product(
     product_id: str,
     current_user: User = Depends(
-        require_role(UserRole.ADMIN, UserRole.PENGURUS)
+        require_role(UserRole.ADMIN, UserRole.PENGURUS, UserRole.KASIR)
     ),
 ):
     if not ObjectId.is_valid(product_id):
