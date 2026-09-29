@@ -200,3 +200,29 @@ export interface SupplierPaymentPayload {
   referenceNumber: string | null
   notes: string | null
 }
+
+export type ActivityEntityType =
+  | 'PURCHASE_ORDER'
+  | 'GOODS_RECEIPT'
+  | 'PURCHASE'
+  | 'SUPPLIER_INVOICE'
+  | 'SUPPLIER_PAYMENT'
+
+export type ActivityType =
+  | 'CREATED'
+  | 'UPDATED'
+  | 'SUBMITTED'
+  | 'APPROVED'
+  | 'ORDERED'
+  | 'CANCELLED'
+
+export interface Activity {
+  id: string
+  entityType: ActivityEntityType
+  entityId: string
+  activityType: ActivityType
+  referenceNumber: string | null
+  description: string
+  actorId: string
+  createdAt: string
+}

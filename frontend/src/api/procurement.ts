@@ -1,4 +1,7 @@
 import type {
+  Activity,
+  ActivityEntityType,
+  ActivityType,
   GoodsReceipt,
   GoodsReceiptPayload,
   Purchase,
@@ -464,6 +467,52 @@ export async function createSupplierPayment(
       await getErrorMessage(
         response,
         'Gagal mencatat pembayaran supplier.',
+      ),
+    )
+  }
+
+  return response.json()
+}
+
+export async function getActivities(
+  accessToken: string,
+  params?: {
+    entityType?: ActivityEntityType
+    activityType?: ActivityType
+  },
+): Promise<Activity[]> {
+  const searchParams = new URLSearchParams()
+
+  if (params?.entityType) {
+    searchParams.set(
+      'entityType',
+      params.entityType,
+    )
+  }
+
+  if (params?.activityType) {
+    searchParams.set(
+      'activityType',
+      params.activityType,
+    )
+  }
+
+  const query = searchParams.toString()
+
+  const response = await fetch(
+    `/api/activities${query ? `?${query}` : ''}`,
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    },
+  )
+
+  if (!response.ok) {
+    throw new Error(
+      await getErrorMessage(
+        response,
+        'Gagal mengambil Activity Timeline.',
       ),
     )
   }

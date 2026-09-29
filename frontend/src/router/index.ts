@@ -295,6 +295,14 @@ const router = createRouter({
         roles: ['admin', 'pengurus'],
       },
     },
+    {
+      path: '/activities',
+      component: () =>
+        import('../pages/activity/ActivityListPage.vue'),
+      meta: {
+        roles: ['admin', 'pengurus'],
+      },
+    },
   ],
 })
 

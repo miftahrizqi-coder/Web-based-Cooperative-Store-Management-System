@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from app.api.activity import router as activity_router
 from app.api.auth import router as auth_router
 from app.api.users import router as users_router
 from app.api.procurement import router as procurement_router
@@ -25,3 +26,4 @@ app.include_router(procurement_router)
 app.include_router(products_router)
 app.include_router(suppliers_router)
 app.include_router(supplier_products_router)
+app.include_router(activity_router, prefix="/api")

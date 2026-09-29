@@ -62,6 +62,11 @@ export const navigationItems: NavigationItem[] = [
     to: '/supplier-payments',
     roles: ['admin', 'pengurus'],
   },
+  {
+    label: 'Activity Timeline',
+    to: '/activities',
+    roles: ['admin', 'pengurus'],
+  },
 ]
 
 export function getLandingPage(role: UserRole): string {

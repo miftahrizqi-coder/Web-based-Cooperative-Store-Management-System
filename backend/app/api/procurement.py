@@ -1,6 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.api.auth import get_current_user
+from app.models.activity import (
+    ActivityEntityType,
+    ActivityType,
+)
+from app.services.activity import create_activity
 from app.models.procurement import (
     GoodsReceipt,
     Purchase,
@@ -252,6 +257,7 @@ async def update_purchase_order_endpoint(
     purchase_order = await update_purchase_order(
         po_id=po_id,
         payload=payload,
+        user_id=str(user.id)
     )
 
     return purchase_order_response(
@@ -268,7 +274,8 @@ async def submit_purchase_order_endpoint(
     user: User = Depends(require_procurement_user),
 ):
     purchase_order = await submit_purchase_order(
-        po_id=po_id
+        po_id=po_id,
+        user_id=str(user.id)
     )
 
     return purchase_order_response(
@@ -303,7 +310,8 @@ async def order_purchase_order_endpoint(
     user: User = Depends(require_procurement_user),
 ):
     purchase_order = await order_purchase_order(
-        po_id=po_id
+        po_id=po_id,
+        user_id=str(user.id)
     )
 
     return purchase_order_response(
@@ -320,7 +328,8 @@ async def cancel_purchase_order_endpoint(
     user: User = Depends(require_procurement_user),
 ):
     purchase_order = await cancel_purchase_order(
-        po_id=po_id
+        po_id=po_id,
+        user_id=str(user.id)
     )
 
     return purchase_order_response(
@@ -487,6 +496,7 @@ async def create_supplier_invoice_endpoint(
 ):
     invoice = await create_supplier_invoice(
         payload=payload,
+        user_id=str(user.id)
     )
 
     return supplier_invoice_response(invoice)
