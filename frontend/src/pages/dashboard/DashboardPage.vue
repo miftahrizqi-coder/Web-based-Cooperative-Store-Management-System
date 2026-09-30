@@ -144,6 +144,15 @@ const hasSalesAnalytics = computed(
     (maxSales.value > 0 || maxTransactions.value > 0),
 )
 
+const bestSellingProducts = computed(
+  () =>
+    dashboardAnalytics.value?.best_selling_products ?? [],
+)
+
+const hasBestSellingProducts = computed(
+  () => bestSellingProducts.value.length > 0,
+)
+
 const outOfStockAlerts = computed(() =>
   stockAlerts.value.filter(
     (alert) => alert.status === 'OUT_OF_STOCK',
@@ -867,7 +876,11 @@ onMounted(() => {
           </div>
 
           <div class="support-panel__value">
-            —
+              {{
+                dashboardAnalytics
+                  ? formatNumber(dashboardAnalytics.active_po_count)
+                  : '—'
+              }}
           </div>
 
           <p class="support-panel__description">
@@ -894,7 +907,11 @@ onMounted(() => {
           </div>
 
           <div class="support-panel__value">
-            —
+              {{
+                dashboardAnalytics
+                  ? formatCurrency(dashboardAnalytics.supplier_payable)
+                  : '—'
+              }}
           </div>
 
           <p class="support-panel__description">
@@ -927,33 +944,125 @@ onMounted(() => {
       </div>
 
       <article class="surface-panel best-selling-panel">
-        <div class="table-header">
-          <span>Produk</span>
-          <span>SKU</span>
-          <span class="numeric-column">
-            Terjual
-          </span>
-          <span class="numeric-column">
-            Penjualan
-          </span>
-        </div>
-
-        <div class="table-empty">
-          <div class="table-empty__icon" aria-hidden="true">
-            —
+          <!-- Loading -->
+          <div
+            v-if="analyticsLoading"
+            class="best-selling-loading"
+            aria-live="polite"
+            aria-label="Memuat produk terlaris"
+          >
+            <div class="skeleton skeleton--row" />
+            <div class="skeleton skeleton--row" />
+            <div class="skeleton skeleton--row" />
+            <div class="skeleton skeleton--row" />
+            <div class="skeleton skeleton--row" />
           </div>
 
-          <div>
-            <h3>
-              Belum ada data produk terlaris
-            </h3>
+          <!-- Error -->
+          <div
+            v-else-if="analyticsError"
+            class="state-message state-message--error"
+            role="alert"
+          >
+            <div class="state-message__icon">
+              !
+            </div>
 
-            <p>
-              Data akan muncul setelah transaksi penjualan
-              tersedia.
-            </p>
+            <div class="state-message__content">
+              <h3>
+                Produk terlaris tidak dapat dimuat
+              </h3>
+
+              <p>
+                {{ analyticsError }}
+              </p>
+
+              <button
+                type="button"
+                class="button button--primary"
+                @click="loadDashboardAnalytics()"
+              >
+                Coba Lagi
+              </button>
+            </div>
           </div>
-        </div>
+
+          <!-- Empty -->
+          <div
+            v-else-if="!hasBestSellingProducts"
+            class="table-empty"
+          >
+            <div
+              class="table-empty__icon"
+              aria-hidden="true"
+            >
+              —
+            </div>
+
+            <div>
+              <h3>
+                Belum ada data produk terlaris
+              </h3>
+
+              <p>
+                Data akan muncul setelah transaksi penjualan
+                tersedia.
+              </p>
+            </div>
+          </div>
+
+          <!-- Data -->
+          <div
+            v-else
+            class="best-selling-table"
+          >
+            <div class="table-header">
+              <span class="table-header__product">
+                Produk
+              </span>
+
+              <span>
+                SKU
+              </span>
+
+              <span class="numeric-column">
+                Terjual
+              </span>
+            </div>
+
+            <article
+              v-for="(
+                product,
+                index
+              ) in bestSellingProducts"
+              :key="product.product_id"
+              class="best-selling-row"
+            >
+              <div class="best-selling-product">
+                <div class="best-selling-rank">
+                  {{ index + 1 }}
+                </div>
+
+                <div class="product-cell">
+                  <strong>
+                    {{ product.name }}
+                  </strong>
+
+                  <span>
+                    Quantity terjual
+                  </span>
+                </div>
+              </div>
+
+              <span class="metadata">
+                {{ product.sku }}
+              </span>
+
+              <strong class="numeric-column">
+                {{ formatNumber(product.quantity_sold) }}
+              </strong>
+            </article>
+          </div>
       </article>
     </section>
   </main>
@@ -2044,6 +2153,118 @@ button:focus-visible {
 
   .button {
     transition: none;
+  }
+}
+
+.best-selling-table {
+  width: 100%;
+}
+
+.best-selling-table .table-header {
+  display: grid;
+  grid-template-columns:
+    minmax(0, 1fr)
+    180px
+    100px;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 16px;
+}
+
+.best-selling-row {
+  display: grid;
+  grid-template-columns:
+    minmax(0, 1fr)
+    180px
+    100px;
+  align-items: center;
+  gap: 16px;
+  padding: 16px;
+  border-top: 1px solid #e6ebe8;
+}
+
+.best-selling-product {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.best-selling-rank {
+  display: flex;
+  flex: 0 0 32px;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: #f1f4f2;
+  color: #46514b;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.best-selling-product .product-cell {
+  min-width: 0;
+}
+
+.best-selling-product .product-cell strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.best-selling-product .product-cell span {
+  display: block;
+}
+
+.best-selling-row .metadata {
+  min-width: 0;
+}
+
+.best-selling-row .numeric-column {
+  text-align: right;
+}
+
+.best-selling-loading {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+}
+
+.best-selling-loading .skeleton {
+  width: 100%;
+}
+
+@media (max-width: 768px) {
+  .best-selling-table .table-header {
+    grid-template-columns:
+      minmax(0, 1fr)
+      80px;
+    gap: 12px;
+    padding: 10px 12px;
+  }
+
+  .best-selling-table .table-header span:nth-child(2) {
+    display: none;
+  }
+
+  .best-selling-row {
+    grid-template-columns:
+      minmax(0, 1fr)
+      80px;
+    gap: 12px;
+    padding: 14px 12px;
+  }
+
+  .best-selling-row .metadata {
+    display: none;
+  }
+
+  .best-selling-row .numeric-column {
+    min-width: 0;
+    text-align: right;
   }
 }
 </style>

@@ -8,6 +8,11 @@ class DashboardSalesAnalyticsItem(BaseModel):
     sales: float
     transactions: int
 
+class DashboardBestSellingProduct(BaseModel):
+    product_id: str
+    sku: str
+    name: str
+    quantity_sold: float
 
 class DashboardAnalyticsResponse(BaseModel):
     sales_today: float
@@ -24,5 +29,5 @@ class DashboardAnalyticsResponse(BaseModel):
     expenses: float | None
 
     sales_analytics: list[DashboardSalesAnalyticsItem]
-
+    best_selling_products: list[DashboardBestSellingProduct]
     generated_at: datetime

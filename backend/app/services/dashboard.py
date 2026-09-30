@@ -13,6 +13,7 @@ from app.models.sales import Sale, SaleStatus
 from app.schemas.dashboard import (
     DashboardAnalyticsResponse,
     DashboardSalesAnalyticsItem,
+    DashboardBestSellingProduct,
 )
 
 
@@ -293,6 +294,54 @@ async def get_dashboard_analytics(
         }
     ).count()
 
+    # Produk terlaris berdasarkan quantity terjual
+    best_selling_pipeline = [
+        {
+            "$match": {
+                "status": SaleStatus.PAID.value,
+            }
+        },
+        {
+            "$unwind": "$items",
+        },
+        {
+            "$group": {
+                "_id": {
+                    "product_id": "$items.productId",
+                    "sku": "$items.sku",
+                    "name": "$items.name",
+                },
+                "quantity_sold": {
+                    "$sum": "$items.quantity",
+                },
+            },
+        },
+        {
+            "$sort": {
+                "quantity_sold": -1,
+                "_id.name": 1,
+            },
+        },
+        {
+            "$limit": 10,
+        },
+    ]
+
+    best_selling_cursor = await db["sales"].aggregate(
+        best_selling_pipeline
+    )
+    best_selling_result = await best_selling_cursor.to_list()
+
+    best_selling_products = [
+        DashboardBestSellingProduct(
+            product_id=item["_id"]["product_id"],
+            sku=item["_id"]["sku"],
+            name=item["_id"]["name"],
+            quantity_sold=float(item["quantity_sold"]),
+        )
+        for item in best_selling_result
+    ]
+
     # ---------------------------------------------------------
     # Response
     # ---------------------------------------------------------
@@ -307,5 +356,6 @@ async def get_dashboard_analytics(
         overdue_invoice_count=overdue_invoice_count,
         expenses=None,
         sales_analytics=sales_analytics,
+        best_selling_products=best_selling_products,
         generated_at=now,
     )
