@@ -6,8 +6,16 @@ import {
 } from 'vue'
 
 import {
+  getDashboardAnalytics,
+} from '../../api/dashboard'
+
+import {
   getInventoryAlerts,
 } from '../../api/inventory'
+
+import type {
+  DashboardAnalytics,
+} from '../../types/dashboard'
 
 import type {
   StockAlert,
@@ -28,62 +36,88 @@ const stockAlertError = ref('')
  * Dashboard KPI mengikuti DESIGN.md §7.2.
  * Nilai tetap "—" sampai endpoint KPI tersedia.
  */
-const kpis = [
-  {
-    label: 'Penjualan hari ini',
-    value: '—',
-    context: 'Hari ini',
-    kind: 'money',
-  },
-  {
-    label: 'Jumlah transaksi',
-    value: '—',
-    context: 'Hari ini',
-    kind: 'number',
-  },
-  {
-    label: 'Total produk',
-    value: '—',
-    context: 'Produk aktif',
-    kind: 'number',
-  },
-  {
-    label: 'Total anggota',
-    value: '—',
-    context: 'Anggota terdaftar',
-    kind: 'number',
-  },
-  {
-    label: 'Low / out of stock',
-    value: '—',
-    context: 'Perlu perhatian',
-    kind: 'warning',
-  },
-  {
-    label: 'Active PO',
-    value: '—',
-    context: 'Pengadaan aktif',
-    kind: 'number',
-  },
-  {
-    label: 'Hutang supplier',
-    value: '—',
-    context: 'Outstanding',
-    kind: 'money',
-  },
-  {
-    label: 'Invoice jatuh tempo',
-    value: '—',
-    context: 'Perlu pembayaran',
-    kind: 'warning',
-  },
-  {
-    label: 'Expenses',
-    value: '—',
-    context: 'Periode berjalan',
-    kind: 'money',
-  },
-]
+const dashboardAnalytics = ref<DashboardAnalytics | null>(null)
+
+const kpis = computed(() => {
+  const analytics = dashboardAnalytics.value
+
+  return [
+    {
+      label: 'Penjualan hari ini',
+      value: analytics
+        ? formatCurrency(analytics.sales_today)
+        : '—',
+      context: 'Hari ini',
+      kind: 'money',
+    },
+    {
+      label: 'Jumlah transaksi',
+      value: analytics
+        ? formatNumber(analytics.transaction_count_today)
+        : '—',
+      context: 'Hari ini',
+      kind: 'number',
+    },
+    {
+      label: 'Total produk',
+      value: analytics
+        ? formatNumber(analytics.total_products)
+        : '—',
+      context: 'Produk aktif',
+      kind: 'number',
+    },
+    {
+      label: 'Total anggota',
+      value: analytics
+        ? formatNumber(analytics.total_members)
+        : '—',
+      context: 'Anggota terdaftar',
+      kind: 'number',
+    },
+    {
+      label: 'Low / out of stock',
+      value: analytics
+        ? formatNumber(analytics.low_stock_count)
+        : '—',
+      context: 'Perlu perhatian',
+      kind: 'warning',
+    },
+    {
+      label: 'Active PO',
+      value: analytics
+        ? formatNumber(analytics.active_po_count)
+        : '—',
+      context: 'Pengadaan aktif',
+      kind: 'number',
+    },
+    {
+      label: 'Hutang supplier',
+      value: analytics
+        ? formatCurrency(analytics.supplier_payable)
+        : '—',
+      context: 'Outstanding',
+      kind: 'money',
+    },
+    {
+      label: 'Invoice jatuh tempo',
+      value: analytics
+        ? formatNumber(analytics.overdue_invoice_count)
+        : '—',
+      context: 'Perlu pembayaran',
+      kind: 'warning',
+    },
+    {
+      label: 'Expenses',
+      value:
+        analytics?.expenses !== null &&
+        analytics?.expenses !== undefined
+          ? formatCurrency(analytics.expenses)
+          : '—',
+      context: 'Periode berjalan',
+      kind: 'money',
+    },
+  ]
+})
 
 const outOfStockAlerts = computed(() =>
   stockAlerts.value.filter(
@@ -108,6 +142,26 @@ const hasStockAlerts = computed(
 const dashboardLoaded = computed(
   () => dashboardState.value === 'loaded',
 )
+
+async function loadDashboardAnalytics() {
+  const accessToken = localStorage.getItem(
+    'access_token',
+  )
+
+  if (!accessToken) {
+    dashboardState.value = 'partial_error'
+    return
+  }
+
+  try {
+    dashboardAnalytics.value =
+      await getDashboardAnalytics(accessToken)
+
+    dashboardState.value = 'loaded'
+  } catch {
+    dashboardState.value = 'partial_error'
+  }
+}
 
 async function loadStockAlerts() {
   stockAlertLoading.value = true
@@ -147,7 +201,16 @@ function formatNumber(value: number) {
   return new Intl.NumberFormat('id-ID').format(value)
 }
 
+function formatCurrency(value: number) {
+  return new Intl.NumberFormat('id-ID', {
+    style: 'currency',
+    currency: 'IDR',
+    maximumFractionDigits: 0,
+  }).format(value)
+}
+
 onMounted(() => {
+  loadDashboardAnalytics()
   loadStockAlerts()
 })
 </script>

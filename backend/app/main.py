@@ -12,6 +12,7 @@ from app.api.inventory import router as inventory_router
 from app.api.supplier_products import router as supplier_products_router
 from app.core.database import client, init_db
 from app.api.sales import router as sales_router
+from app.api.dashboard import router as dashboard_router
 from app.api.members import router as members_router
 
 @asynccontextmanager
@@ -33,3 +34,4 @@ app.include_router(activity_router, prefix="/api")
 app.include_router(inventory_router)
 app.include_router(sales_router)
 app.include_router(members_router)
+app.include_router(dashboard_router)
