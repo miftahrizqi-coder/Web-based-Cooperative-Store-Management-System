@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.core.permissions import require_role
 from app.models.user import User, UserRole
@@ -23,6 +23,16 @@ reports_user = require_role(
     response_model=DashboardAnalyticsResponse,
 )
 async def get_dashboard_report(
+    days: int = Query(
+        default=7,
+        description="Rentang analytics penjualan: 7 atau 30 hari.",
+    ),
     current_user: User = Depends(reports_user),
 ):
-    return await get_dashboard_analytics()
+    if days not in (7, 30):
+        raise HTTPException(
+            status_code=400,
+            detail="Parameter days harus 7 atau 30.",
+        )
+
+    return await get_dashboard_analytics(days=days)

@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from app.core.config import settings
 from app.core.database import client
@@ -10,7 +10,10 @@ from app.models.procurement import (
     SupplierInvoice,
 )
 from app.models.sales import Sale, SaleStatus
-from app.schemas.dashboard import DashboardAnalyticsResponse
+from app.schemas.dashboard import (
+    DashboardAnalyticsResponse,
+    DashboardSalesAnalyticsItem,
+)
 
 
 db = client[settings.mongodb_database]
@@ -27,7 +30,9 @@ ACTIVE_PO_STATUSES = [
 ]
 
 
-async def get_dashboard_analytics() -> DashboardAnalyticsResponse:
+async def get_dashboard_analytics(
+    days: int = 7,
+) -> DashboardAnalyticsResponse:
     now = datetime.now(timezone.utc)
 
     start_of_today = now.replace(
@@ -36,6 +41,9 @@ async def get_dashboard_analytics() -> DashboardAnalyticsResponse:
         second=0,
         microsecond=0,
     )
+
+    if days not in (7, 30):
+        raise ValueError("days harus 7 atau 30.")
 
     # ---------------------------------------------------------
     # Sales hari ini
@@ -58,6 +66,76 @@ async def get_dashboard_analytics() -> DashboardAnalyticsResponse:
     transaction_count_today = len(
         sales_today_result
     )
+
+    # ---------------------------------------------------------
+    # Sales Analytics
+    #
+    # Menampilkan total penjualan dan jumlah transaksi
+    # per hari untuk periode 7 atau 30 hari.
+    # Hanya transaksi PAID yang dihitung.
+    # ---------------------------------------------------------
+    analytics_start = (
+        start_of_today
+        - timedelta(days=days - 1)
+    )
+
+    sales_analytics_result = await Sale.find(
+        {
+            "status": SaleStatus.PAID,
+            "createdAt": {
+                "$gte": analytics_start,
+                "$lt": now,
+            },
+        }
+    ).to_list()
+
+    analytics_by_date: dict[
+        str,
+        dict[str, float | int],
+    ] = {}
+
+    for sale in sales_analytics_result:
+        sale_date = sale.createdAt.astimezone(
+            timezone.utc
+        ).date().isoformat()
+
+        if sale_date not in analytics_by_date:
+            analytics_by_date[sale_date] = {
+                "sales": 0.0,
+                "transactions": 0,
+            }
+
+        analytics_by_date[sale_date]["sales"] += float(
+            sale.total
+        )
+
+        analytics_by_date[sale_date]["transactions"] += 1
+
+    sales_analytics = []
+
+    for index in range(days):
+        current_date = (
+            analytics_start
+            + timedelta(days=index)
+        ).date().isoformat()
+
+        daily_data = analytics_by_date.get(
+            current_date,
+            {
+                "sales": 0.0,
+                "transactions": 0,
+            },
+        )
+
+        sales_analytics.append(
+            DashboardSalesAnalyticsItem(
+                date=current_date,
+                sales=float(daily_data["sales"]),
+                transactions=int(
+                    daily_data["transactions"]
+                ),
+            )
+        )
 
     # ---------------------------------------------------------
     # Product aktif
@@ -121,7 +199,9 @@ async def get_dashboard_analytics() -> DashboardAnalyticsResponse:
             "$lookup": {
                 "from": "supplier_payments",
                 "let": {
-                    "invoice_id": {"$toString": "$_id"},
+                    "invoice_id": {
+                        "$toString": "$_id",
+                    },
                 },
                 "pipeline": [
                     {
@@ -137,7 +217,9 @@ async def get_dashboard_analytics() -> DashboardAnalyticsResponse:
                     {
                         "$group": {
                             "_id": None,
-                            "paid": {"$sum": "$amount"},
+                            "paid": {
+                                "$sum": "$amount",
+                            },
                         }
                     },
                 ],
@@ -151,23 +233,17 @@ async def get_dashboard_analytics() -> DashboardAnalyticsResponse:
                         "$total",
                         {
                             "$ifNull": [
-                                {"$arrayElemAt": ["$payments.paid", 0]},
+                                {
+                                    "$arrayElemAt": [
+                                        "$payments.paid",
+                                        0,
+                                    ]
+                                },
                                 0,
                             ]
                         },
                     ]
                 }
-            }
-        },
-        {
-            "$match": {
-                "outstanding": {"$gt": 0},
-            }
-        },
-        {
-            "$group": {
-                "_id": None,
-                "total": {"$sum": "$outstanding"},
             }
         },
         {
@@ -217,6 +293,9 @@ async def get_dashboard_analytics() -> DashboardAnalyticsResponse:
         }
     ).count()
 
+    # ---------------------------------------------------------
+    # Response
+    # ---------------------------------------------------------
     return DashboardAnalyticsResponse(
         sales_today=float(sales_today),
         transaction_count_today=transaction_count_today,
@@ -227,5 +306,6 @@ async def get_dashboard_analytics() -> DashboardAnalyticsResponse:
         supplier_payable=supplier_payable,
         overdue_invoice_count=overdue_invoice_count,
         expenses=None,
+        sales_analytics=sales_analytics,
         generated_at=now,
     )
