@@ -10,7 +10,7 @@ export const navigationItems: NavigationItem[] = [
   {
     label: 'Dashboard',
     to: '/dashboard',
-    roles: ['admin', 'kasir', 'pengurus'],
+    roles: ['admin', 'pengurus'],
   },
   {
     label: 'Pengguna',
@@ -68,7 +68,7 @@ export const navigationItems: NavigationItem[] = [
     roles: ['admin', 'pengurus'],
   },
   {
-    label: 'Stok',
+    label: 'Stock',
     to: '/inventory',
     roles: ['admin', 'pengurus'],
   },
@@ -91,6 +91,16 @@ export const navigationItems: NavigationItem[] = [
     label: 'POS',
     to: '/pos',
     roles: ['kasir'],
+  },
+    {
+    label: 'Sales',
+    to: '/sales',
+    roles: ['admin', 'kasir'],
+  },
+  {
+    label: 'Categories',
+    to: '/Categories',
+    roles: ['admin', 'pengurus'],
   },
 ]
 

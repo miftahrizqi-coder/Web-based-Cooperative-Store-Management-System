@@ -4,6 +4,8 @@ import { useRoute, useRouter } from 'vue-router'
 import { createProduct, getProduct, updateProduct } from '../../api/products'
 import { useAuth } from '../../stores/auth'
 import type { Product } from '../../types/product'
+import { getCategories, getCategory } from '../../api/categories'
+import type { Category } from '../../api/categories'
 
 const route = useRoute()
 const router = useRouter()
@@ -27,7 +29,8 @@ const isLoading = ref(isEdit)
 const isSaving = ref(false)
 const errorMessage = ref('')
 const fieldError = ref('')
-
+const categories = ref<Category[]>([])
+const isLoadingCategories = ref(false)
 const formTitle = computed(() => (isEdit ? 'Edit produk' : 'Tambah produk'))
 const formDescription = computed(() =>
   isEdit
@@ -82,7 +85,21 @@ function validate() {
   }
 
   if (!categoryId.value.trim()) {
-    fieldError.value = 'ID kategori wajib diisi.'
+    fieldError.value = 'kategori wajib diisi.'
+    return false
+  }
+    const selectedCategory = categories.value.find(
+    (category) => category.id === categoryId.value,
+  )
+
+  if (!selectedCategory) {
+    fieldError.value = 'Kategori yang dipilih tidak valid.'
+    return false
+  }
+
+  if (!isEdit && !selectedCategory.is_active) {
+    fieldError.value =
+      'Produk baru hanya dapat menggunakan kategori Active.'
     return false
   }
 
@@ -115,24 +132,6 @@ function fillForm(product: Product) {
   stock.value = product.stock
   minimumStock.value = product.minimum_stock
   isActive.value = product.is_active
-}
-
-async function loadProduct() {
-  if (!isEdit || !token.value || !productId) {
-    isLoading.value = false
-    return
-  }
-
-  try {
-    fillForm(await getProduct(token.value, productId))
-  } catch (error) {
-    errorMessage.value =
-      error instanceof Error
-        ? error.message
-        : 'Gagal mengambil data produk.'
-  } finally {
-    isLoading.value = false
-  }
 }
 
 async function handleSubmit() {
@@ -182,7 +181,61 @@ async function handleSubmit() {
   }
 }
 
-onMounted(loadProduct)
+async function loadCategories() {
+  if (!token.value) {
+    errorMessage.value =
+      'Sesi login tidak ditemukan. Silakan login kembali.'
+    isLoading.value = false
+    return
+  }
+
+  isLoadingCategories.value = true
+  errorMessage.value = ''
+
+  try {
+    // Untuk create: hanya kategori Active.
+    categories.value = await getCategories(
+      token.value,
+      true,
+    )
+
+    // Untuk edit: ambil Product terlebih dahulu.
+    if (isEdit && productId) {
+      const product = await getProduct(
+        token.value,
+        productId,
+      )
+
+      fillForm(product)
+
+      // Jika kategori Product sudah inactive,
+      // tambahkan kategori tersebut agar tetap terlihat
+      // sebagai kategori yang sedang digunakan.
+      const currentCategoryExists = categories.value.some(
+        (category) => category.id === product.category_id,
+      )
+
+      if (!currentCategoryExists) {
+        const currentCategory = await getCategory(
+          token.value,
+          product.category_id,
+        )
+
+        categories.value.push(currentCategory)
+      }
+    }
+  } catch (error) {
+    errorMessage.value =
+      error instanceof Error
+        ? error.message
+        : 'Gagal mengambil data Product dan Category.'
+  } finally {
+    isLoadingCategories.value = false
+    isLoading.value = false
+  }
+}
+
+onMounted(loadCategories)
 </script>
 
 <template>
@@ -373,17 +426,47 @@ onMounted(loadProduct)
                 </label>
 
                 <label class="block">
-                  <span class="mb-1.5 block text-[13px] font-medium leading-[18px] text-[#46514B]">
-                    ID kategori
-                    <span class="text-[#C0392B]" aria-hidden="true">*</span>
+                  <span
+                    class="mb-1.5 block text-[13px] font-medium leading-[18px] text-[#46514B]"
+                  >
+                    Kategori
+                    <span
+                      class="text-[#C0392B]"
+                      aria-hidden="true"
+                    >
+                      *
+                    </span>
                   </span>
-                  <input
+
+                  <select
                     v-model="categoryId"
                     required
-                    type="text"
-                    autocomplete="off"
-                    class="min-h-10 w-full rounded-md border border-[#D6DDD9] bg-white px-3 text-[14px] leading-5 text-[#17201C] outline-none transition placeholder:text-[#6B756F] focus:border-[#176B4D] focus:ring-2 focus:ring-[#176B4D] focus:ring-offset-2"
+                    :disabled="isLoadingCategories"
+                    class="min-h-10 w-full rounded-md border border-[#D6DDD9] bg-white px-3 text-[14px] leading-5 text-[#17201C] outline-none transition focus:border-[#176B4D] focus:ring-2 focus:ring-[#176B4D] focus:ring-offset-2 disabled:cursor-not-allowed disabled:bg-[#F1F4F2] disabled:text-[#6B756F]"
                   >
+                    <option value="">
+                      {{
+                        isLoadingCategories
+                          ? 'Memuat kategori...'
+                          : 'Pilih kategori'
+                      }}
+                    </option>
+
+                    <option
+                      v-for="category in categories"
+                      :key="category.id"
+                      :value="category.id"
+                    >
+                      {{ category.name }}
+                      {{ !category.is_active ? ' (Inactive)' : '' }}
+                    </option>
+                  </select>
+
+                  <span
+                    class="mt-1 block text-[12px] leading-4 text-[#6B756F]"
+                  >
+                    Produk baru hanya dapat menggunakan kategori Active.
+                  </span>
                 </label>
 
                 <label class="block sm:col-span-2">

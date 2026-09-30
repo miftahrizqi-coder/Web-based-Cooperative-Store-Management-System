@@ -45,11 +45,6 @@ export type PaymentMethod =
   | 'DEBIT'
   | 'OTHER'
 
-export interface SaleItemPayload {
-  productId: string
-  quantity: number
-}
-
 export interface CreateSalePayload {
   items: SaleItemPayload[]
   memberId: string | null
@@ -57,7 +52,9 @@ export interface CreateSalePayload {
   paidAmount: number
 }
 
-export type SaleStatus = 'PAID'
+export type SaleStatus =
+  | 'PAID'
+  | 'CANCELLED'
 
 export interface SaleItemResponse {
   productId: string

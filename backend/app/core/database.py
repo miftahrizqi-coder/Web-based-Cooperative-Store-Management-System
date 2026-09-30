@@ -20,6 +20,7 @@ from app.models.inventory import (
     InventoryAuditEvent,
     StockMovement
 )
+from app.models.category import Category
 
 
 
@@ -32,6 +33,7 @@ async def init_db():
         document_models=[
             User,
             Member,
+            Category,
             Activity,
             Supplier,
             Product,

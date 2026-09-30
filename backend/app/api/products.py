@@ -4,6 +4,7 @@ from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.core.permissions import require_role
+from app.models.category import Category
 from app.models.product import Product
 from app.models.user import User, UserRole
 from app.schemas.product import (
@@ -176,6 +177,20 @@ async def create_product(
         barcode=data.barcode,
     )
 
+    category = await Category.get(data.category_id)
+
+    if not category:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Category tidak ditemukan.",
+        )
+
+    if not category.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Category tidak aktif.",
+        )
+
     now = datetime.now(timezone.utc)
 
     product = Product(
@@ -196,7 +211,6 @@ async def create_product(
     await product.insert()
 
     return to_response(product)
-
 
 @router.put(
     "/{product_id}",
@@ -222,7 +236,19 @@ async def update_product(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Produk tidak ditemukan.",
         )
+    category = await Category.get(data.category_id)
 
+    if not category:
+        raise HTTPException(
+            status_code=404,
+            detail="Category tidak ditemukan.",
+        )
+
+    if not category.is_active:
+        raise HTTPException(
+            status_code=400,
+            detail="Category tidak aktif.",
+        )
     await ensure_unique_product_identifiers(
         sku=data.sku,
         barcode=data.barcode,
