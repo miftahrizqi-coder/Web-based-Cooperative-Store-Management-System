@@ -1,59 +1,90 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { createProduct, getProduct, updateProduct } from '../../api/products'
 import { useAuth } from '../../stores/auth'
-import type { Product } from '../../types/product'
+import { createGoodsReceipt, getPurchaseOrder } from '../../api/procurement'
 
 const route = useRoute()
 const router = useRouter()
 const { token } = useAuth()
 
-const productId = route.params.id as string | undefined
-const isEdit = Boolean(productId)
+const purchaseOrderId = route.params.id as string
 
-const sku = ref('')
-const barcode = ref('')
-const name = ref('')
-const categoryId = ref('')
-const unit = ref('pcs')
-const purchasePrice = ref(0)
-const sellingPrice = ref(0)
-const stock = ref(0)
-const minimumStock = ref(0)
-const isActive = ref(true)
+interface PurchaseOrderItem {
+  supplierProductId: string
+  productId: string
+  sku: string
+  name: string
+  quantity: number
+  unitPrice: number
+}
 
-const isLoading = ref(isEdit)
+interface PurchaseOrder {
+  id: string
+  poNumber: string
+  supplierId: string
+  status: string
+  items: PurchaseOrderItem[]
+}
+
+interface ReceiptItemForm {
+  productId: string
+  name: string
+  orderedQuantity: number
+  previouslyReceivedQuantity: number
+  remainingQuantity: number
+  receivedQuantity: number
+  acceptedQuantity: number
+  rejectedQuantity: number
+  rejectionReason: string
+}
+
+const purchaseOrder = ref<PurchaseOrder | null>(null)
+const items = ref<ReceiptItemForm[]>([])
+const notes = ref('')
+
+const isLoading = ref(true)
 const isSaving = ref(false)
 const errorMessage = ref('')
 const fieldError = ref('')
 
-const formTitle = computed(() => (isEdit ? 'Edit produk' : 'Tambah produk'))
-const formDescription = computed(() =>
-  isEdit
-    ? 'Perbarui informasi produk, harga, stok, dan status penggunaan.'
-    : 'Lengkapi informasi dasar, harga, stok, SKU, dan barcode sebelum menyimpan produk.',
-)
+const canSubmit = computed(() => {
+  if (!purchaseOrder.value || items.value.length === 0) {
+    return false
+  }
 
-const stockState = computed(() => {
-  if (stock.value <= 0) {
-    return {
-      label: 'Stok habis',
-      class: 'border-[#E7B8B2] bg-[#FEF3F2] text-[#C0392B]',
+  return items.value.every((item) => {
+    if (item.receivedQuantity <= 0) {
+      return false
     }
-  }
 
-  if (stock.value <= minimumStock.value) {
-    return {
-      label: 'Stok rendah',
-      class: 'border-[#E6C98F] bg-[#FFF8E8] text-[#B7791F]',
+    if (item.acceptedQuantity < 0 || item.rejectedQuantity < 0) {
+      return false
     }
-  }
 
-  return {
-    label: 'Stok tersedia',
-    class: 'border-[#B9DEC9] bg-[#F0F8F5] text-[#16834B]',
-  }
+    if (
+      item.acceptedQuantity + item.rejectedQuantity !==
+      item.receivedQuantity
+    ) {
+      return false
+    }
+
+    if (
+      item.receivedQuantity >
+      item.remainingQuantity
+    ) {
+      return false
+    }
+
+    if (
+      item.rejectedQuantity > 0 &&
+      !item.rejectionReason.trim()
+    ) {
+      return false
+    }
+
+    return true
+  })
 })
 
 function formatCurrency(value: number) {
@@ -65,74 +96,180 @@ function formatCurrency(value: number) {
 }
 
 function goBack() {
-  router.push('/products')
+  router.push(`/purchases/${purchaseOrderId}`)
 }
 
-function validate() {
-  fieldError.value = ''
-
-  if (!sku.value.trim()) {
-    fieldError.value = 'SKU wajib diisi.'
-    return false
-  }
-
-  if (!name.value.trim()) {
-    fieldError.value = 'Nama produk wajib diisi.'
-    return false
-  }
-
-  if (!categoryId.value.trim()) {
-    fieldError.value = 'ID kategori wajib diisi.'
-    return false
-  }
-
-  if (!unit.value.trim()) {
-    fieldError.value = 'Satuan wajib diisi.'
-    return false
-  }
-
-  if (
-    purchasePrice.value < 0 ||
-    sellingPrice.value < 0 ||
-    stock.value < 0 ||
-    minimumStock.value < 0
-  ) {
-    fieldError.value = 'Harga dan stok tidak boleh negatif.'
-    return false
-  }
-
-  return true
+function createFormItems(order: PurchaseOrder) {
+  items.value = order.items.map((item) => ({
+    productId: item.productId,
+    name: item.name,
+    orderedQuantity: item.quantity,
+    previouslyReceivedQuantity: 0,
+    remainingQuantity: item.quantity,
+    receivedQuantity: 0,
+    acceptedQuantity: 0,
+    rejectedQuantity: 0,
+    rejectionReason: '',
+  }))
 }
 
-function fillForm(product: Product) {
-  sku.value = product.sku
-  barcode.value = product.barcode ?? ''
-  name.value = product.name
-  categoryId.value = product.category_id
-  unit.value = product.unit
-  purchasePrice.value = product.purchase_price
-  sellingPrice.value = product.selling_price
-  stock.value = product.stock
-  minimumStock.value = product.minimum_stock
-  isActive.value = product.is_active
-}
+async function loadPurchaseOrder() {
+  if (!token.value) {
+    errorMessage.value =
+      'Sesi login tidak ditemukan. Silakan login kembali.'
+    isLoading.value = false
+    return
+  }
 
-async function loadProduct() {
-  if (!isEdit || !token.value || !productId) {
+  if (!purchaseOrderId) {
+    errorMessage.value =
+      'Purchase Order tidak ditemukan.'
     isLoading.value = false
     return
   }
 
   try {
-    fillForm(await getProduct(token.value, productId))
+    const result = await getPurchaseOrder(
+      token.value,
+      purchaseOrderId,
+    )
+
+    purchaseOrder.value = result as PurchaseOrder
+
+    createFormItems(purchaseOrder.value)
   } catch (error) {
     errorMessage.value =
       error instanceof Error
         ? error.message
-        : 'Gagal mengambil data produk.'
+        : 'Gagal mengambil data Purchase Order.'
   } finally {
     isLoading.value = false
   }
+}
+
+function updateReceivedQuantity(item: ReceiptItemForm) {
+  if (item.receivedQuantity < 0) {
+    item.receivedQuantity = 0
+  }
+
+  if (
+    item.receivedQuantity >
+    item.remainingQuantity
+  ) {
+    item.receivedQuantity =
+      item.remainingQuantity
+  }
+
+  if (
+    item.acceptedQuantity >
+    item.receivedQuantity
+  ) {
+    item.acceptedQuantity =
+      item.receivedQuantity
+  }
+
+  item.rejectedQuantity =
+    Math.max(
+      item.receivedQuantity -
+        item.acceptedQuantity,
+      0,
+    )
+}
+
+function updateAcceptedQuantity(item: ReceiptItemForm) {
+  if (item.acceptedQuantity < 0) {
+    item.acceptedQuantity = 0
+  }
+
+  if (
+    item.acceptedQuantity >
+    item.receivedQuantity
+  ) {
+    item.acceptedQuantity =
+      item.receivedQuantity
+  }
+
+  item.rejectedQuantity =
+    item.receivedQuantity -
+    item.acceptedQuantity
+}
+
+function updateRejectedQuantity(item: ReceiptItemForm) {
+  if (item.rejectedQuantity < 0) {
+    item.rejectedQuantity = 0
+  }
+
+  if (
+    item.rejectedQuantity >
+    item.receivedQuantity
+  ) {
+    item.rejectedQuantity =
+      item.receivedQuantity
+  }
+
+  item.acceptedQuantity =
+    item.receivedQuantity -
+    item.rejectedQuantity
+}
+
+function validate() {
+  fieldError.value = ''
+
+  if (!purchaseOrder.value) {
+    fieldError.value =
+      'Purchase Order tidak ditemukan.'
+    return false
+  }
+
+  if (items.value.length === 0) {
+    fieldError.value =
+      'Tidak ada item yang dapat diterima.'
+    return false
+  }
+
+  for (const item of items.value) {
+    if (!item.productId) {
+      fieldError.value =
+        `Product ID untuk ${item.name} tidak ditemukan.`
+      return false
+    }
+
+    if (item.receivedQuantity <= 0) {
+      fieldError.value =
+        `Jumlah diterima untuk ${item.name} harus lebih dari 0.`
+      return false
+    }
+
+    if (
+      item.receivedQuantity >
+      item.remainingQuantity
+    ) {
+      fieldError.value =
+        `Jumlah diterima untuk ${item.name} melebihi sisa PO.`
+      return false
+    }
+
+    if (
+      item.acceptedQuantity +
+        item.rejectedQuantity !==
+      item.receivedQuantity
+    ) {
+      fieldError.value =
+        `Jumlah diterima, diterima baik, dan ditolak untuk ${item.name} tidak sesuai.`
+      return false
+    }
+
+    if (
+      item.rejectedQuantity > 0 &&
+      !item.rejectionReason.trim()
+    ) {
+      fieldError.value =
+        `Alasan penolakan untuk ${item.name} wajib diisi.`
+      return false
+    }
+  }
+
+  return true
 }
 
 async function handleSubmit() {
@@ -143,7 +280,8 @@ async function handleSubmit() {
   }
 
   if (!token.value) {
-    errorMessage.value = 'Sesi login tidak ditemukan. Silakan login kembali.'
+    errorMessage.value =
+      'Sesi login tidak ditemukan. Silakan login kembali.'
     return
   }
 
@@ -151,539 +289,303 @@ async function handleSubmit() {
 
   try {
     const payload = {
-      sku: sku.value.trim(),
-      barcode: barcode.value.trim() || null,
-      name: name.value.trim(),
-      category_id: categoryId.value.trim(),
-      unit: unit.value.trim(),
-      purchase_price: purchasePrice.value,
-      selling_price: sellingPrice.value,
-      stock: stock.value,
-      minimum_stock: minimumStock.value,
+      purchaseOrderId,
+      items: items.value.map((item) => ({
+        productId: item.productId,
+        name: item.name,
+        receivedQuantity: item.receivedQuantity,
+        acceptedQuantity: item.acceptedQuantity,
+        rejectedQuantity: item.rejectedQuantity,
+        rejectionReason:
+          item.rejectedQuantity > 0
+            ? item.rejectionReason.trim()
+            : null,
+      })),
+      notes: notes.value.trim() || null,
     }
 
-    if (isEdit && productId) {
-      await updateProduct(token.value, productId, {
-        ...payload,
-        is_active: isActive.value,
-      })
-    } else {
-      await createProduct(token.value, payload)
-    }
+    const receipt = await createGoodsReceipt(
+      token.value,
+      payload,
+    )
 
-    await router.push('/products')
+    await router.push(
+      `/goods-receipts/${receipt.id}`,
+    )
   } catch (error) {
     errorMessage.value =
       error instanceof Error
         ? error.message
-        : 'Gagal menyimpan produk.'
+        : 'Penerimaan gagal disimpan. Tidak ada perubahan pada stok. Coba lagi.'
   } finally {
     isSaving.value = false
   }
 }
 
-onMounted(loadProduct)
+onMounted(loadPurchaseOrder)
 </script>
 
 <template>
-  <main class="min-w-0 bg-[#F8FAF9] font-[Inter,ui-sans-serif,system-ui,sans-serif] text-[#17201C]">
-    <div class="mx-auto w-full max-w-[1440px] px-4 py-6 sm:px-6 lg:px-8">
-      <!-- Breadcrumb -->
-      <nav class="mb-4" aria-label="Breadcrumb">
-        <ol class="flex flex-wrap items-center gap-2 text-[13px] leading-[18px] text-[#6B756F]">
-          <li>
-            <button
-              type="button"
-              class="rounded-sm font-medium text-[#176B4D] hover:text-[#1F805D] hover:underline focus:outline-none focus:ring-2 focus:ring-[#176B4D] focus:ring-offset-2"
-              @click="goBack"
-            >
-              Produk
-            </button>
-          </li>
-          <li aria-hidden="true">/</li>
-          <li aria-current="page">{{ formTitle }}</li>
-        </ol>
-      </nav>
-
-      <!-- Page header -->
-      <header class="border-b border-[#E6EBE8] pb-6">
-        <div class="flex flex-col gap-2">
-          <h1 class="text-[28px] font-semibold leading-9 tracking-[-0.01em] text-[#17201C]">
-            {{ formTitle }}
-          </h1>
-          <p class="max-w-3xl text-[14px] leading-5 text-[#6B756F]">
-            {{ formDescription }}
-          </p>
-        </div>
-      </header>
-
-      <!-- Loading -->
-      <section v-if="isLoading" class="mt-6" aria-label="Memuat data produk">
-        <div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
-          <div class="rounded-lg border border-[#D6DDD9] bg-white p-6">
-            <div class="space-y-6">
-              <div v-for="index in 8" :key="index" class="space-y-2">
-                <div class="h-4 w-28 animate-pulse rounded bg-[#E6EBE8]" />
-                <div class="h-10 animate-pulse rounded-md bg-[#F1F4F2]" />
-              </div>
-            </div>
-          </div>
-
-          <aside class="rounded-lg border border-[#D6DDD9] bg-white p-5">
-            <div class="space-y-4">
-              <div class="h-5 w-36 animate-pulse rounded bg-[#E6EBE8]" />
-              <div class="h-24 animate-pulse rounded-md bg-[#F1F4F2]" />
-              <div class="h-16 animate-pulse rounded-md bg-[#F1F4F2]" />
-            </div>
-          </aside>
-        </div>
-      </section>
-
-      <!-- Load error -->
-      <section
-        v-else-if="errorMessage && isEdit && !sku"
-        class="mt-6 rounded-lg border border-[#E7B8B2] bg-white p-6"
-        role="alert"
+  <div class="space-y-6">
+    <div>
+      <button
+        type="button"
+        class="text-sm font-medium text-[#176B4D] hover:underline"
+        @click="goBack"
       >
-        <div class="flex items-start gap-3">
-          <div class="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#FEF3F2] text-[#C0392B]">
-            !
+        ← Kembali ke Purchase Order
+      </button>
+
+      <h1 class="mt-3 text-2xl font-bold text-[#12372A]">
+        Penerimaan Barang
+      </h1>
+
+      <p class="mt-1 text-sm text-slate-600">
+        Catat barang yang diterima dari supplier berdasarkan Purchase Order.
+      </p>
+    </div>
+
+    <div
+      v-if="isLoading"
+      class="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-600"
+    >
+      Memuat Purchase Order...
+    </div>
+
+    <div
+      v-else-if="errorMessage && !purchaseOrder"
+      class="rounded-xl border border-[#E7B8B2] bg-[#FEF3F2] p-4 text-sm text-[#C0392B]"
+    >
+      {{ errorMessage }}
+    </div>
+
+    <form
+      v-else-if="purchaseOrder"
+      class="space-y-6"
+      @submit.prevent="handleSubmit"
+    >
+      <section
+        class="rounded-xl border border-slate-200 bg-white p-5"
+      >
+        <div class="grid gap-4 sm:grid-cols-2">
+          <div>
+            <p class="text-xs font-medium uppercase text-slate-500">
+              Purchase Order
+            </p>
+            <p class="mt-1 font-semibold text-[#12372A]">
+              {{ purchaseOrder.poNumber }}
+            </p>
           </div>
 
           <div>
-            <h2 class="text-[18px] font-semibold leading-[26px] text-[#17201C]">
-              Produk gagal dimuat
-            </h2>
-            <p class="mt-1 text-[14px] leading-5 text-[#46514B]">
-              {{ errorMessage }}
+            <p class="text-xs font-medium uppercase text-slate-500">
+              Status
             </p>
-
-            <button
-              type="button"
-              class="mt-5 inline-flex min-h-10 items-center justify-center rounded-md border border-[#D6DDD9] bg-white px-4 text-[14px] font-medium text-[#46514B] transition hover:bg-[#F1F4F2] focus:outline-none focus:ring-2 focus:ring-[#176B4D] focus:ring-offset-2"
-              @click="goBack"
-            >
-              Kembali ke Produk
-            </button>
+            <p class="mt-1 font-semibold text-[#12372A]">
+              {{ purchaseOrder.status }}
+            </p>
           </div>
         </div>
       </section>
 
-      <!-- Form -->
-      <form
-        v-else
-        class="mt-6 pb-24"
-        novalidate
-        @submit.prevent="handleSubmit"
+      <div
+        v-if="fieldError"
+        class="rounded-xl border border-[#E7B8B2] bg-[#FEF3F2] p-4 text-sm text-[#C0392B]"
       >
-        <div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
-          <!-- Main form -->
-          <div class="min-w-0 space-y-6">
-            <!-- Errors -->
-            <section
-              v-if="errorMessage || fieldError"
-              class="space-y-3"
-              aria-label="Pesan validasi"
-            >
-              <div
-                v-if="errorMessage"
-                role="alert"
-                class="rounded-md border border-[#E7B8B2] bg-[#FEF3F2] px-4 py-3"
-              >
-                <p class="text-[14px] font-medium leading-5 text-[#C0392B]">
-                  {{ errorMessage }}
-                </p>
-              </div>
+        {{ fieldError }}
+      </div>
 
-              <div
-                v-if="fieldError"
-                role="alert"
-                class="rounded-md border border-[#E6C98F] bg-[#FFF8E8] px-4 py-3"
-              >
-                <p class="text-[14px] font-medium leading-5 text-[#B7791F]">
-                  {{ fieldError }}
-                </p>
-              </div>
-            </section>
+      <div
+        v-if="errorMessage"
+        class="rounded-xl border border-[#E7B8B2] bg-[#FEF3F2] p-4 text-sm text-[#C0392B]"
+      >
+        {{ errorMessage }}
+      </div>
 
-            <!-- Basic information -->
-            <section
-              class="rounded-lg border border-[#D6DDD9] bg-white"
-              aria-labelledby="basic-information-title"
-            >
-              <div class="border-b border-[#E6EBE8] px-5 py-4 sm:px-6">
-                <h2
-                  id="basic-information-title"
-                  class="text-[18px] font-semibold leading-[26px] text-[#17201C]"
-                >
-                  Informasi dasar
-                </h2>
-                <p class="mt-1 text-[13px] leading-[18px] text-[#6B756F]">
-                  Identitas utama produk yang digunakan pada katalog dan transaksi.
-                </p>
-              </div>
+      <section
+        class="overflow-hidden rounded-xl border border-slate-200 bg-white"
+      >
+        <div class="border-b border-slate-200 p-5">
+          <h2 class="font-semibold text-[#12372A]">
+            Item penerimaan
+          </h2>
+          <p class="mt-1 text-sm text-slate-500">
+            Jumlah diterima tidak boleh melebihi sisa Purchase Order.
+          </p>
+        </div>
 
-              <div class="grid gap-5 p-5 sm:grid-cols-2 sm:p-6">
-                <label class="block">
-                  <span class="mb-1.5 block text-[13px] font-medium leading-[18px] text-[#46514B]">
-                    Nama produk
-                    <span class="text-[#C0392B]" aria-hidden="true">*</span>
-                  </span>
-                  <input
-                    v-model="name"
-                    required
-                    type="text"
-                    autocomplete="off"
-                    class="min-h-10 w-full rounded-md border border-[#D6DDD9] bg-white px-3 text-[14px] leading-5 text-[#17201C] outline-none transition placeholder:text-[#6B756F] focus:border-[#176B4D] focus:ring-2 focus:ring-[#176B4D] focus:ring-offset-2"
-                  >
-                </label>
+        <div class="divide-y divide-slate-200">
+          <div
+            v-for="item in items"
+            :key="item.productId"
+            class="space-y-5 p-5"
+          >
+            <div>
+              <p class="font-semibold text-[#12372A]">
+                {{ item.name }}
+              </p>
 
-                <label class="block">
-                  <span class="mb-1.5 block text-[13px] font-medium leading-[18px] text-[#46514B]">
-                    SKU
-                    <span class="text-[#C0392B]" aria-hidden="true">*</span>
-                  </span>
-                  <input
-                    v-model="sku"
-                    required
-                    type="text"
-                    autocomplete="off"
-                    :disabled="isEdit"
-                    class="min-h-10 w-full rounded-md border border-[#D6DDD9] bg-white px-3 text-[14px] leading-5 text-[#17201C] outline-none transition placeholder:text-[#6B756F] focus:border-[#176B4D] focus:ring-2 focus:ring-[#176B4D] focus:ring-offset-2 disabled:cursor-not-allowed disabled:bg-[#F1F4F2] disabled:text-[#6B756F]"
-                  >
-                  <span v-if="isEdit" class="mt-1 block text-[12px] leading-4 text-[#6B756F]">
-                    SKU tidak diubah setelah produk dibuat.
-                  </span>
-                </label>
-
-                <label class="block">
-                  <span class="mb-1.5 block text-[13px] font-medium leading-[18px] text-[#46514B]">
-                    Barcode
-                  </span>
-                  <input
-                    v-model="barcode"
-                    type="text"
-                    inputmode="numeric"
-                    autocomplete="off"
-                    class="min-h-10 w-full rounded-md border border-[#D6DDD9] bg-white px-3 text-[14px] leading-5 text-[#17201C] outline-none transition placeholder:text-[#6B756F] focus:border-[#176B4D] focus:ring-2 focus:ring-[#176B4D] focus:ring-offset-2"
-                  >
-                  <span class="mt-1 block text-[12px] leading-4 text-[#6B756F]">
-                    Opsional.
-                  </span>
-                </label>
-
-                <label class="block">
-                  <span class="mb-1.5 block text-[13px] font-medium leading-[18px] text-[#46514B]">
-                    ID kategori
-                    <span class="text-[#C0392B]" aria-hidden="true">*</span>
-                  </span>
-                  <input
-                    v-model="categoryId"
-                    required
-                    type="text"
-                    autocomplete="off"
-                    class="min-h-10 w-full rounded-md border border-[#D6DDD9] bg-white px-3 text-[14px] leading-5 text-[#17201C] outline-none transition placeholder:text-[#6B756F] focus:border-[#176B4D] focus:ring-2 focus:ring-[#176B4D] focus:ring-offset-2"
-                  >
-                </label>
-
-                <label class="block sm:col-span-2">
-                  <span class="mb-1.5 block text-[13px] font-medium leading-[18px] text-[#46514B]">
-                    Satuan
-                    <span class="text-[#C0392B]" aria-hidden="true">*</span>
-                  </span>
-                  <input
-                    v-model="unit"
-                    required
-                    type="text"
-                    placeholder="pcs"
-                    autocomplete="off"
-                    class="min-h-10 w-full rounded-md border border-[#D6DDD9] bg-white px-3 text-[14px] leading-5 text-[#17201C] outline-none transition placeholder:text-[#6B756F] focus:border-[#176B4D] focus:ring-2 focus:ring-[#176B4D] focus:ring-offset-2 sm:max-w-md"
-                  >
-                </label>
-              </div>
-            </section>
-
-            <!-- Pricing -->
-            <section
-              class="rounded-lg border border-[#D6DDD9] bg-white"
-              aria-labelledby="pricing-title"
-            >
-              <div class="border-b border-[#E6EBE8] px-5 py-4 sm:px-6">
-                <h2
-                  id="pricing-title"
-                  class="text-[18px] font-semibold leading-[26px] text-[#17201C]"
-                >
-                  Pricing
-                </h2>
-                <p class="mt-1 text-[13px] leading-[18px] text-[#6B756F]">
-                  Tentukan harga beli dan harga jual dalam Rupiah.
-                </p>
-              </div>
-
-              <div class="grid gap-5 p-5 sm:grid-cols-2 sm:p-6">
-                <label class="block">
-                  <span class="mb-1.5 block text-[13px] font-medium leading-[18px] text-[#46514B]">
-                    Harga beli
-                    <span class="text-[#C0392B]" aria-hidden="true">*</span>
-                  </span>
-                  <div class="relative">
-                    <span class="pointer-events-none absolute inset-y-0 left-3 flex items-center text-[14px] text-[#6B756F]">
-                      Rp
-                    </span>
-                    <input
-                      v-model.number="purchasePrice"
-                      required
-                      min="0"
-                      type="number"
-                      step="1"
-                      inputmode="numeric"
-                      class="min-h-10 w-full rounded-md border border-[#D6DDD9] bg-white py-2 pl-10 pr-3 text-right text-[14px] leading-5 text-[#17201C] outline-none transition focus:border-[#176B4D] focus:ring-2 focus:ring-[#176B4D] focus:ring-offset-2"
-                    >
-                  </div>
-                  <span class="mt-1 block text-[12px] leading-4 text-[#6B756F]">
-                    {{ formatCurrency(purchasePrice) }}
-                  </span>
-                </label>
-
-                <label class="block">
-                  <span class="mb-1.5 block text-[13px] font-medium leading-[18px] text-[#46514B]">
-                    Harga jual
-                    <span class="text-[#C0392B]" aria-hidden="true">*</span>
-                  </span>
-                  <div class="relative">
-                    <span class="pointer-events-none absolute inset-y-0 left-3 flex items-center text-[14px] text-[#6B756F]">
-                      Rp
-                    </span>
-                    <input
-                      v-model.number="sellingPrice"
-                      required
-                      min="0"
-                      type="number"
-                      step="1"
-                      inputmode="numeric"
-                      class="min-h-10 w-full rounded-md border border-[#D6DDD9] bg-white py-2 pl-10 pr-3 text-right text-[14px] leading-5 text-[#17201C] outline-none transition focus:border-[#176B4D] focus:ring-2 focus:ring-[#176B4D] focus:ring-offset-2"
-                    >
-                  </div>
-                  <span class="mt-1 block text-[12px] leading-4 text-[#6B756F]">
-                    {{ formatCurrency(sellingPrice) }}
-                  </span>
-                </label>
-              </div>
-            </section>
-
-            <!-- Inventory -->
-            <section
-              class="rounded-lg border border-[#D6DDD9] bg-white"
-              aria-labelledby="inventory-title"
-            >
-              <div class="border-b border-[#E6EBE8] px-5 py-4 sm:px-6">
-                <h2
-                  id="inventory-title"
-                  class="text-[18px] font-semibold leading-[26px] text-[#17201C]"
-                >
-                  Inventory
-                </h2>
-                <p class="mt-1 text-[13px] leading-[18px] text-[#6B756F]">
-                  Atur stok awal dan batas minimum stok produk.
-                </p>
-              </div>
-
-              <div class="grid gap-5 p-5 sm:grid-cols-2 sm:p-6">
-                <label class="block">
-                  <span class="mb-1.5 block text-[13px] font-medium leading-[18px] text-[#46514B]">
-                    Stok
-                    <span class="text-[#C0392B]" aria-hidden="true">*</span>
-                  </span>
-                  <input
-                    v-model.number="stock"
-                    required
-                    min="0"
-                    type="number"
-                    step="1"
-                    inputmode="numeric"
-                    class="min-h-10 w-full rounded-md border border-[#D6DDD9] bg-white px-3 text-right text-[14px] leading-5 text-[#17201C] outline-none transition focus:border-[#176B4D] focus:ring-2 focus:ring-[#176B4D] focus:ring-offset-2"
-                  >
-                </label>
-
-                <label class="block">
-                  <span class="mb-1.5 block text-[13px] font-medium leading-[18px] text-[#46514B]">
-                    Stok minimum
-                    <span class="text-[#C0392B]" aria-hidden="true">*</span>
-                  </span>
-                  <input
-                    v-model.number="minimumStock"
-                    required
-                    min="0"
-                    type="number"
-                    step="1"
-                    inputmode="numeric"
-                    class="min-h-10 w-full rounded-md border border-[#D6DDD9] bg-white px-3 text-right text-[14px] leading-5 text-[#17201C] outline-none transition focus:border-[#176B4D] focus:ring-2 focus:ring-[#176B4D] focus:ring-offset-2"
-                  >
-                </label>
-              </div>
-            </section>
-
-            <!-- Status -->
-            <section
-              v-if="isEdit"
-              class="rounded-lg border border-[#D6DDD9] bg-white"
-              aria-labelledby="status-title"
-            >
-              <div class="border-b border-[#E6EBE8] px-5 py-4 sm:px-6">
-                <h2
-                  id="status-title"
-                  class="text-[18px] font-semibold leading-[26px] text-[#17201C]"
-                >
-                  Status produk
-                </h2>
-                <p class="mt-1 text-[13px] leading-[18px] text-[#6B756F]">
-                  Nonaktifkan produk tanpa menghapus histori transaksi yang sudah ada.
-                </p>
-              </div>
-
-              <div class="p-5 sm:p-6">
-                <label class="flex cursor-pointer items-start gap-3">
-                  <input
-                    v-model="isActive"
-                    type="checkbox"
-                    class="mt-0.5 h-4 w-4 rounded border-[#D6DDD9] text-[#176B4D] focus:ring-2 focus:ring-[#176B4D] focus:ring-offset-2"
-                  >
-                  <span>
-                    <span class="block text-[14px] font-medium leading-5 text-[#17201C]">
-                      Produk aktif
-                    </span>
-                    <span class="mt-1 block text-[13px] leading-[18px] text-[#6B756F]">
-                      Produk tetap tersimpan dan dapat digunakan sesuai permission ketika status ini aktif.
-                    </span>
-                  </span>
-                </label>
-              </div>
-            </section>
-          </div>
-
-          <!-- Context / Summary -->
-          <aside class="min-w-0 lg:sticky lg:top-6 lg:self-start">
-            <div class="space-y-6">
-              <section
-                class="rounded-lg border border-[#D6DDD9] bg-white"
-                aria-labelledby="summary-title"
-              >
-                <div class="border-b border-[#E6EBE8] px-5 py-4">
-                  <h2
-                    id="summary-title"
-                    class="text-[18px] font-semibold leading-[26px] text-[#17201C]"
-                  >
-                    Ringkasan
-                  </h2>
-                  <p class="mt-1 text-[13px] leading-[18px] text-[#6B756F]">
-                    Konteks data sebelum disimpan.
-                  </p>
-                </div>
-
-                <dl class="divide-y divide-[#E6EBE8]">
-                  <div class="px-5 py-4">
-                    <dt class="text-[12px] leading-4 text-[#6B756F]">Nama</dt>
-                    <dd class="mt-1 break-words text-[14px] font-medium leading-5 text-[#17201C]">
-                      {{ name || 'Belum diisi' }}
-                    </dd>
-                  </div>
-
-                  <div class="px-5 py-4">
-                    <dt class="text-[12px] leading-4 text-[#6B756F]">SKU</dt>
-                    <dd class="mt-1 break-all font-mono text-[14px] font-medium leading-5 text-[#17201C]">
-                      {{ sku || 'Belum diisi' }}
-                    </dd>
-                  </div>
-
-                  <div class="px-5 py-4">
-                    <dt class="text-[12px] leading-4 text-[#6B756F]">Harga jual</dt>
-                    <dd class="mt-1 text-[16px] font-semibold leading-6 text-[#17201C]">
-                      {{ formatCurrency(sellingPrice) }}
-                    </dd>
-                  </div>
-
-                  <div class="px-5 py-4">
-                    <dt class="text-[12px] leading-4 text-[#6B756F]">Stok</dt>
-                    <dd class="mt-1 flex flex-wrap items-center gap-2">
-                      <span class="text-[16px] font-semibold leading-6 text-[#17201C]">
-                        {{ stock }} {{ unit || 'unit' }}
-                      </span>
-                      <span
-                        class="inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium leading-4"
-                        :class="stockState.class"
-                      >
-                        {{ stockState.label }}
-                      </span>
-                    </dd>
-                  </div>
-
-                  <div class="px-5 py-4">
-                    <dt class="text-[12px] leading-4 text-[#6B756F]">Status</dt>
-                    <dd class="mt-1 text-[14px] font-medium leading-5 text-[#17201C]">
-                      {{ isEdit ? (isActive ? 'Aktif' : 'Nonaktif') : 'Produk baru' }}
-                    </dd>
-                  </div>
-                </dl>
-              </section>
-
-              <section
-                class="rounded-lg border border-[#D6DDD9] bg-[#F0F8F5]"
-                aria-labelledby="validation-title"
-              >
-                <div class="p-5">
-                  <h2
-                    id="validation-title"
-                    class="text-[16px] font-semibold leading-6 text-[#12372A]"
-                  >
-                    Sebelum menyimpan
-                  </h2>
-
-                  <ul class="mt-3 space-y-2 text-[13px] leading-[18px] text-[#46514B]">
-                    <li class="flex gap-2">
-                      <span aria-hidden="true">•</span>
-                      <span>SKU, nama, kategori, dan satuan wajib diisi.</span>
-                    </li>
-                    <li class="flex gap-2">
-                      <span aria-hidden="true">•</span>
-                      <span>Harga dan stok tidak boleh bernilai negatif.</span>
-                    </li>
-                    <li class="flex gap-2">
-                      <span aria-hidden="true">•</span>
-                      <span>Periksa kembali data sebelum menyimpan.</span>
-                    </li>
-                  </ul>
-                </div>
-              </section>
-
-              <p class="text-[12px] leading-4 text-[#6B756F]">
-                Field bertanda <span class="font-medium text-[#C0392B]">*</span> wajib diisi.
+              <p class="mt-1 text-xs text-slate-500">
+                Product ID: {{ item.productId }}
               </p>
             </div>
-          </aside>
-        </div>
 
-        <!-- Sticky footer -->
-        <div class="fixed inset-x-0 bottom-0 z-20 border-t border-[#D6DDD9] bg-white/95 px-4 py-3 backdrop-blur-sm sm:px-6 lg:left-auto lg:right-0 lg:w-[calc(100%-240px)] lg:px-8">
-          <div class="mx-auto flex max-w-[1440px] flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-end">
-            <button
-              type="button"
-              :disabled="isSaving"
-              class="inline-flex min-h-10 items-center justify-center rounded-md border border-[#D6DDD9] bg-white px-4 text-[14px] font-medium text-[#46514B] transition hover:bg-[#F1F4F2] disabled:cursor-not-allowed disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-[#176B4D] focus:ring-offset-2"
-              @click="goBack"
-            >
-              Batal
-            </button>
+            <div class="grid gap-4 sm:grid-cols-3">
+              <div>
+                <label class="text-xs font-medium text-slate-500">
+                  Jumlah PO
+                </label>
+                <p class="mt-1 font-semibold">
+                  {{ item.orderedQuantity }}
+                </p>
+              </div>
 
-            <button
-              type="submit"
-              :disabled="isSaving"
-              class="inline-flex min-h-10 items-center justify-center rounded-md bg-[#176B4D] px-4 text-[14px] font-semibold text-white transition hover:bg-[#1F805D] disabled:cursor-not-allowed disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-[#176B4D] focus:ring-offset-2"
+              <div>
+                <label class="text-xs font-medium text-slate-500">
+                  Sudah diterima
+                </label>
+                <p class="mt-1 font-semibold">
+                  {{ item.previouslyReceivedQuantity }}
+                </p>
+              </div>
+
+              <div>
+                <label class="text-xs font-medium text-slate-500">
+                  Sisa
+                </label>
+                <p class="mt-1 font-semibold text-[#176B4D]">
+                  {{ item.remainingQuantity }}
+                </p>
+              </div>
+            </div>
+
+            <div class="grid gap-4 sm:grid-cols-3">
+              <div>
+                <label
+                  class="block text-sm font-medium text-slate-700"
+                >
+                  Jumlah diterima
+                </label>
+
+                <input
+                  v-model.number="item.receivedQuantity"
+                  type="number"
+                  min="1"
+                  :max="item.remainingQuantity"
+                  class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-[#176B4D] focus:ring-2 focus:ring-[#176B4D]/20"
+                  @input="updateReceivedQuantity(item)"
+                />
+              </div>
+
+              <div>
+                <label
+                  class="block text-sm font-medium text-slate-700"
+                >
+                  Diterima baik
+                </label>
+
+                <input
+                  v-model.number="item.acceptedQuantity"
+                  type="number"
+                  min="0"
+                  :max="item.receivedQuantity"
+                  class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-[#176B4D] focus:ring-2 focus:ring-[#176B4D]/20"
+                  @input="updateAcceptedQuantity(item)"
+                />
+              </div>
+
+              <div>
+                <label
+                  class="block text-sm font-medium text-slate-700"
+                >
+                  Ditolak
+                </label>
+
+                <input
+                  v-model.number="item.rejectedQuantity"
+                  type="number"
+                  min="0"
+                  :max="item.receivedQuantity"
+                  class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-[#176B4D] focus:ring-2 focus:ring-[#176B4D]/20"
+                  @input="updateRejectedQuantity(item)"
+                />
+              </div>
+            </div>
+
+            <div
+              v-if="item.rejectedQuantity > 0"
             >
-              {{ isSaving ? 'Menyimpan...' : isEdit ? 'Simpan perubahan' : 'Simpan produk' }}
-            </button>
+              <label
+                class="block text-sm font-medium text-slate-700"
+              >
+                Alasan penolakan
+              </label>
+
+              <textarea
+                v-model="item.rejectionReason"
+                rows="2"
+                class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-[#176B4D] focus:ring-2 focus:ring-[#176B4D]/20"
+                placeholder="Contoh: barang rusak atau jumlah tidak sesuai."
+              />
+            </div>
+
+            <div
+              class="rounded-lg bg-slate-50 px-4 py-3 text-sm text-slate-600"
+            >
+              Total diterima:
+              <strong class="text-slate-900">
+                {{ item.receivedQuantity }}
+              </strong>
+              · Baik:
+              <strong class="text-[#176B4D]">
+                {{ item.acceptedQuantity }}
+              </strong>
+              · Ditolak:
+              <strong class="text-[#C0392B]">
+                {{ item.rejectedQuantity }}
+              </strong>
+            </div>
           </div>
         </div>
-      </form>
-    </div>
-  </main>
+      </section>
+
+      <section
+        class="rounded-xl border border-slate-200 bg-white p-5"
+      >
+        <label
+          class="block text-sm font-medium text-slate-700"
+        >
+          Catatan
+        </label>
+
+        <textarea
+          v-model="notes"
+          rows="3"
+          class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-[#176B4D] focus:ring-2 focus:ring-[#176B4D]/20"
+          placeholder="Catatan penerimaan barang (opsional)"
+        />
+      </section>
+
+      <div
+        class="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end"
+      >
+        <button
+          type="button"
+          class="rounded-lg border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+          :disabled="isSaving"
+          @click="goBack"
+        >
+          Batal
+        </button>
+
+        <button
+          type="submit"
+          class="rounded-lg bg-[#176B4D] px-5 py-3 text-sm font-semibold text-white hover:bg-[#12372A] disabled:cursor-not-allowed disabled:opacity-50"
+          :disabled="isSaving || !canSubmit"
+        >
+          {{ isSaving ? 'Menyimpan...' : 'Simpan Penerimaan' }}
+        </button>
+      </div>
+    </form>
+  </div>
 </template>

@@ -4,10 +4,14 @@ import { useRouter } from 'vue-router'
 import { getProducts, deactivateProduct } from '../../api/products'
 import { useAuth } from '../../stores/auth'
 import type { Product, ProductStockStatus } from '../../types/product'
+import { getCategories } from '../../api/categories'
+import type { Category } from '../../api/categories'
 
 const router = useRouter()
 const { token } = useAuth()
 
+const categories = ref<Category[]>([])
+const isLoadingCategories = ref(false)
 const products = ref<Product[]>([])
 const isLoading = ref(true)
 const errorMessage = ref('')
@@ -166,7 +170,34 @@ function activeBadgeClass(product: Product) {
     : 'border-[#D6DDD9] bg-[#F1F4F2] text-[#6B756F]'
 }
 
-onMounted(loadProducts)
+async function loadCategories() {
+  if (!token.value) {
+    return
+  }
+
+  isLoadingCategories.value = true
+
+  try {
+    categories.value = await getCategories(
+      token.value,
+      true,
+    )
+  } catch (error) {
+    errorMessage.value =
+      error instanceof Error
+        ? error.message
+        : 'Gagal mengambil data Category.'
+  } finally {
+    isLoadingCategories.value = false
+  }
+}
+
+onMounted(async () => {
+  await Promise.all([
+    loadProducts(),
+    loadCategories(),
+  ])
+})
 </script>
 
 <template>
@@ -252,12 +283,31 @@ onMounted(loadProducts)
             <span class="mb-1.5 block text-[13px] font-medium leading-[18px] text-[#46514B]">
               Kategori
             </span>
-            <input
-              v-model="categoryId"
-              type="text"
-              placeholder="ID kategori"
-              class="h-10 w-full rounded-lg border border-[#D6DDD9] bg-white px-3 text-[14px] leading-5 text-[#17201C] outline-none transition placeholder:text-[#8A948E] focus:border-[#176B4D] focus:ring-2 focus:ring-[#176B4D] focus:ring-offset-2"
-            >
+              <div>
+                <select
+                  id="category-filter"
+                  v-model="categoryId"
+                  :disabled="isLoadingCategories"
+                  class="min-h-10 w-full rounded-md border border-[#D6DDD9] bg-white px-3 text-[14px] text-[#17201C] outline-none focus:border-[#176B4D] focus:ring-2 focus:ring-[#176B4D] disabled:cursor-not-allowed disabled:bg-[#F1F4F2]"
+                  @change="loadProducts"
+                >
+                  <option value="">
+                    {{
+                      isLoadingCategories
+                        ? 'Memuat kategori...'
+                        : 'Semua kategori'
+                    }}
+                  </option>
+
+                  <option
+                    v-for="category in categories"
+                    :key="category.id"
+                    :value="category.id"
+                  >
+                    {{ category.name }}
+                  </option>
+                </select>
+              </div>
           </label>
 
           <label class="block">

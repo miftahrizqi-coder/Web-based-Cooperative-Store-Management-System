@@ -22,6 +22,7 @@ const router = createRouter({
       component: () => import('../pages/dashboard/DashboardPage.vue'),
       meta: {
         requiresAuth: true,
+        roles: ['admin', 'pengurus']
       },
     },
     {
@@ -370,6 +371,43 @@ const router = createRouter({
       meta: {
         requiresAuth: true,
         roles: ['admin', 'pengurus', 'kasir'],
+      },
+    },
+    {
+      path: '/reports/sales',
+      name: 'sales-report',
+      component: () =>
+        import('../pages/reports/SalesReportPage.vue'),
+      meta: {
+        requiresAuth: true,
+        roles: ['admin', 'pengurus'],
+      },
+    },
+    {
+      path: '/categories',
+      name: 'categories',
+      component: () => import('../pages/categories/CategoriesPage.vue'),
+      meta: {
+        requiresAuth: true,
+        roles: ['admin', 'pengurus'],
+      },
+    },
+    {
+      path: '/categories/create',
+      name: 'category-create',
+      component: () => import('../pages/categories/CategoryFormPage.vue'),
+      meta: {
+        requiresAuth: true,
+        roles: ['admin'],
+      },
+    },
+    {
+      path: '/categories/:id/edit',
+      name: 'category-edit',
+      component: () => import('../pages/categories/CategoryFormPage.vue'),
+      meta: {
+        requiresAuth: true,
+        roles: ['admin'],
       },
     },
   ],
