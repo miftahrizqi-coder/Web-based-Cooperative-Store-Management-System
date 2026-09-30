@@ -496,529 +496,470 @@ onMounted(async () => {
 </script>
 
 <template>
-  <section class="mx-auto max-w-5xl space-y-6">
-    <header>
-      <p class="text-sm font-medium text-green-800">
-        Procurement
-      </p>
-
-      <h1
-        class="mt-1 text-2xl font-semibold text-gray-900"
-      >
-        {{
-          isEditMode
-            ? 'Edit Purchase Order'
-            : 'Tambah Purchase Order'
-        }}
-      </h1>
-
-      <p class="mt-1 text-sm text-gray-600">
-        Isi supplier, produk, harga, dan informasi
-        pengiriman.
-      </p>
-    </header>
-
-    <div
-      v-if="isLoading"
-      class="space-y-4 rounded-xl border border-gray-200 bg-white p-6"
-    >
-      <div
-        class="h-10 animate-pulse rounded bg-gray-100"
-      ></div>
-
-      <div
-        class="h-10 animate-pulse rounded bg-gray-100"
-      ></div>
-
-      <div
-        class="h-40 animate-pulse rounded bg-gray-100"
-      ></div>
-    </div>
-
-    <div
-      v-else
-      class="space-y-6"
-    >
-      <div
-        v-if="errorMessage"
-        class="rounded-xl border border-red-200 bg-red-50 p-4"
-        role="alert"
-      >
-        <p class="text-sm text-red-700">
-          {{ errorMessage }}
-        </p>
-      </div>
-
-      <form
-        class="space-y-6"
-        @submit.prevent="handleSubmit"
-      >
-        <section
-          class="rounded-xl border border-gray-200 bg-white p-6"
-        >
-          <h2
-            class="text-lg font-semibold text-gray-900"
-          >
-            Informasi Purchase Order
-          </h2>
-
-          <div
-            class="mt-5 grid gap-5 md:grid-cols-2"
-          >
-            <label>
-              <span
-                class="mb-1 block text-sm font-medium text-gray-700"
-              >
-                Supplier
-              </span>
-
-              <select
-                v-model="supplierId"
-                :disabled="isLoadingSuppliers"
-                class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-green-700 focus:ring-2 focus:ring-green-700"
-                :aria-invalid="
-                  Boolean(supplierError)
-                "
-              >
-                <option value="">
-                  Pilih supplier
-                </option>
-
-                <option
-                  v-for="supplier in activeSuppliers"
-                  :key="supplier.id"
-                  :value="supplier.id"
-                >
-                  {{ supplier.name }}
-                  —
-                  {{ supplier.supplierCode }}
-                </option>
-              </select>
-
-              <p
-                v-if="supplierError"
-                class="mt-1 text-sm text-red-600"
-              >
-                {{ supplierError }}
-              </p>
-            </label>
-
-            <label>
-              <span
-                class="mb-1 block text-sm font-medium text-gray-700"
-              >
-                Target pengiriman
-              </span>
-
-              <input
-                v-model="expectedDeliveryDate"
-                type="date"
-                class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-green-700 focus:ring-2 focus:ring-green-700"
-              />
-            </label>
-          </div>
-        </section>
-
-        <section
-          class="rounded-xl border border-gray-200 bg-white p-6"
-        >
-          <h2
-            class="text-lg font-semibold text-gray-900"
-          >
-            Produk
-          </h2>
-
-          <div
-            class="mt-5 grid gap-4 md:grid-cols-[2fr_1fr_1fr_auto]"
-          >
-            <label>
-              <span
-                class="mb-1 block text-sm font-medium text-gray-700"
-              >
-                Produk
-              </span>
-
-              <select
-                v-model="selectedSupplierProductId"
-                :disabled="
-                  !supplierId ||
-                  isLoadingSupplierProducts ||
-                  isLoadingProducts
-                "
-                class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-green-700 focus:ring-2 focus:ring-green-700"
-                @change="
-                  selectedSupplierProductChanged
-                "
-              >
-                <option value="">
-                  {{
-                    !supplierId
-                      ? 'Pilih supplier terlebih dahulu'
-                      : isLoadingSupplierProducts
-                        ? 'Memuat produk...'
-                        : 'Pilih produk'
-                  }}
-                </option>
-
-                <option
-                  v-for="option in productOptions"
-                  :key="
-                    option.supplierProduct.id
-                  "
-                  :value="
-                    option.supplierProduct.id
-                  "
-                >
-                  {{ option.product.name }}
-                  —
-                  {{ option.product.sku }}
-                </option>
-              </select>
-            </label>
-
-            <label>
-              <span
-                class="mb-1 block text-sm font-medium text-gray-700"
-              >
-                Jumlah
-              </span>
-
-              <input
-                v-model.number="selectedQuantity"
-                type="number"
-                min="1"
-                step="1"
-                class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-green-700 focus:ring-2 focus:ring-green-700"
-              />
-            </label>
-
-            <label>
-              <span
-                class="mb-1 block text-sm font-medium text-gray-700"
-              >
-                Harga beli
-              </span>
-
-              <input
-                v-model.number="selectedUnitPrice"
-                type="number"
-                min="0"
-                step="1"
-                :disabled="
-                  !selectedSupplierProductId
-                "
-                class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-green-700 focus:ring-2 focus:ring-green-700 disabled:bg-gray-100"
-              />
-            </label>
-
+  <section class="min-h-full bg-[#F8FAF9]">
+    <div class="mx-auto max-w-[1440px] px-4 py-6 sm:px-6 lg:px-8">
+      <!-- Breadcrumb -->
+      <nav class="mb-5" aria-label="Breadcrumb">
+        <ol class="flex flex-wrap items-center gap-2 text-xs text-[#6B756F]">
+          <li>
             <button
               type="button"
-              class="self-end rounded-lg border border-green-700 px-4 py-2 text-sm font-medium text-green-800 hover:bg-green-50 focus:outline-none focus:ring-2 focus:ring-green-700 focus:ring-offset-2"
-              @click="addItem"
+              class="rounded px-1 py-0.5 hover:text-[#176B4D] focus:outline-none focus:ring-2 focus:ring-[#176B4D]"
+              @click="router.push('/purchase-orders')"
             >
-              Tambah
+              Procurement
             </button>
+          </li>
+          <li aria-hidden="true">/</li>
+          <li class="text-[#46514B]">
+            {{ isEditMode ? 'Edit Purchase Order' : 'Purchase Order Baru' }}
+          </li>
+        </ol>
+      </nav>
+
+      <!-- Page header -->
+      <header class="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <p class="text-xs font-semibold uppercase tracking-[0.08em] text-[#176B4D]">
+            Procurement
+          </p>
+          <h1 class="mt-1 text-[28px] font-semibold leading-9 text-[#17201C]">
+            {{ isEditMode ? 'Edit Purchase Order' : 'Buat Purchase Order' }}
+          </h1>
+          <p class="mt-1 max-w-2xl text-sm leading-5 text-[#6B756F]">
+            Susun supplier, item yang dipesan, target pengiriman, dan rincian biaya
+            sebelum purchase order disimpan sebagai draft.
+          </p>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <span
+            class="inline-flex items-center rounded-full border border-[#D6DDD9] bg-white px-3 py-1.5 text-xs font-medium text-[#46514B]"
+          >
+            Status
+            <span class="mx-1.5 text-[#D6DDD9]">•</span>
+            Draft
+          </span>
+        </div>
+      </header>
+
+      <!-- Global loading -->
+      <div
+        v-if="isLoading"
+        class="rounded-lg border border-[#D6DDD9] bg-white p-6"
+        aria-busy="true"
+        aria-label="Memuat purchase order"
+      >
+        <div class="space-y-5 animate-pulse">
+          <div class="h-5 w-48 rounded bg-[#F1F4F2]"></div>
+          <div class="grid gap-4 md:grid-cols-2">
+            <div class="h-10 rounded bg-[#F1F4F2]"></div>
+            <div class="h-10 rounded bg-[#F1F4F2]"></div>
           </div>
+          <div class="h-40 rounded bg-[#F1F4F2]"></div>
+        </div>
+      </div>
 
-          <p
-            v-if="productError"
-            class="mt-3 text-sm text-red-600"
-            role="alert"
-          >
-            {{ productError }}
-          </p>
-
-          <p
-            v-if="itemsError"
-            class="mt-3 text-sm text-red-600"
-            role="alert"
-          >
-            {{ itemsError }}
-          </p>
-
+      <div v-else class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+        <form class="min-w-0 space-y-6" @submit.prevent="handleSubmit">
           <div
-            v-if="items.length === 0"
-            class="mt-5 rounded-lg border border-dashed border-gray-300 p-6 text-center"
+            v-if="errorMessage"
+            class="rounded-lg border border-[#C0392B]/25 bg-[#FEF4F3] p-4"
+            role="alert"
           >
-            <p class="text-sm text-gray-600">
-              {{
-                supplierId
-                  ? 'Belum ada produk dalam purchase order.'
-                  : 'Pilih supplier terlebih dahulu untuk memilih produk.'
-              }}
+            <p class="text-sm font-medium text-[#C0392B]">
+              {{ errorMessage }}
             </p>
           </div>
 
-          <div
-            v-else
-            class="mt-5 overflow-x-auto rounded-lg border border-gray-200"
-          >
-            <table
-              class="min-w-full text-left text-sm"
-            >
-              <thead
-                class="border-b border-gray-200 bg-gray-50"
-              >
-                <tr>
-                  <th
-                    class="px-4 py-3 font-medium text-gray-600"
-                  >
-                    Produk
-                  </th>
+          <!-- Main information -->
+          <section class="rounded-lg border border-[#D6DDD9] bg-white">
+            <div class="border-b border-[#E6EBE8] px-5 py-4 sm:px-6">
+              <h2 class="text-[18px] font-semibold leading-6 text-[#17201C]">
+                Informasi purchase order
+              </h2>
+              <p class="mt-1 text-[13px] leading-[18px] text-[#6B756F]">
+                Tentukan supplier dan target pengiriman untuk PO ini.
+              </p>
+            </div>
 
-                  <th
-                    class="px-4 py-3 font-medium text-gray-600"
-                  >
-                    SKU
-                  </th>
-
-                  <th
-                    class="px-4 py-3 font-medium text-gray-600"
-                  >
-                    Qty
-                  </th>
-
-                  <th
-                    class="px-4 py-3 font-medium text-gray-600"
-                  >
-                    Harga
-                  </th>
-
-                  <th
-                    class="px-4 py-3 font-medium text-gray-600"
-                  >
-                    Subtotal
-                  </th>
-
-                  <th
-                    class="px-4 py-3 font-medium text-gray-600"
-                  >
-                    Aksi
-                  </th>
-                </tr>
-              </thead>
-
-              <tbody
-                class="divide-y divide-gray-100"
-              >
-                <tr
-                  v-for="item in items"
-                  :key="item.supplierProductId"
+            <div class="grid gap-5 p-5 sm:p-6 md:grid-cols-2">
+              <label>
+                <span class="mb-1.5 block text-sm font-medium text-[#46514B]">
+                  Supplier <span class="text-[#C0392B]" aria-hidden="true">*</span>
+                </span>
+                <select
+                  v-model="supplierId"
+                  :disabled="isLoadingSuppliers"
+                  class="w-full rounded-md border border-[#D6DDD9] bg-white px-3 py-2.5 text-sm text-[#17201C] outline-none transition focus:border-[#176B4D] focus:ring-2 focus:ring-[#176B4D]/20 disabled:cursor-not-allowed disabled:bg-[#F1F4F2]"
+                  :aria-invalid="Boolean(supplierError)"
                 >
-                  <td
-                    class="px-4 py-3 font-medium text-gray-900"
+                  <option value="">Pilih supplier</option>
+                  <option
+                    v-for="supplier in activeSuppliers"
+                    :key="supplier.id"
+                    :value="supplier.id"
                   >
-                    {{ item.name }}
-                  </td>
+                    {{ supplier.name }} — {{ supplier.supplierCode }}
+                  </option>
+                </select>
+                <p v-if="supplierError" class="mt-1.5 text-xs text-[#C0392B]" role="alert">
+                  {{ supplierError }}
+                </p>
+              </label>
 
-                  <td
-                    class="px-4 py-3 text-gray-700"
-                  >
-                    {{ item.sku }}
-                  </td>
+              <label>
+                <span class="mb-1.5 block text-sm font-medium text-[#46514B]">
+                  Target pengiriman
+                </span>
+                <input
+                  v-model="expectedDeliveryDate"
+                  type="date"
+                  class="w-full rounded-md border border-[#D6DDD9] bg-white px-3 py-2.5 text-sm text-[#17201C] outline-none transition focus:border-[#176B4D] focus:ring-2 focus:ring-[#176B4D]/20"
+                />
+                <span class="mt-1.5 block text-xs text-[#6B756F]">
+                  Opsional. Digunakan sebagai target penerimaan dari supplier.
+                </span>
+              </label>
+            </div>
+          </section>
 
-                  <td
-                    class="px-4 py-3 text-gray-700"
-                  >
-                    {{ item.quantity }}
-                  </td>
+          <!-- Items -->
+          <section class="rounded-lg border border-[#D6DDD9] bg-white">
+            <div class="border-b border-[#E6EBE8] px-5 py-4 sm:px-6">
+              <div class="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <h2 class="text-[18px] font-semibold leading-6 text-[#17201C]">
+                    Item purchase order
+                  </h2>
+                  <p class="mt-1 text-[13px] leading-[18px] text-[#6B756F]">
+                    Tambahkan produk dari katalog supplier yang aktif.
+                  </p>
+                </div>
+                <span class="text-xs font-medium text-[#6B756F]">
+                  {{ items.length }} item
+                </span>
+              </div>
+            </div>
 
-                  <td
-                    class="px-4 py-3 text-gray-700"
-                  >
-                    {{ formatCurrency(item.unitPrice) }}
-                  </td>
-
-                  <td
-                    class="px-4 py-3 font-medium text-gray-900"
-                  >
-                    {{
-                      formatCurrency(
-                        item.quantity *
-                          item.unitPrice,
-                      )
-                    }}
-                  </td>
-
-                  <td class="px-4 py-3">
-                    <button
-                      type="button"
-                      class="rounded-md border border-red-300 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-600 focus:ring-offset-2"
-                      @click="
-                        removeItem(
-                          item.supplierProductId,
-                        )
-                      "
+            <div class="p-5 sm:p-6">
+              <div class="rounded-md border border-[#E6EBE8] bg-[#F8FAF9] p-4">
+                <div class="grid gap-4 md:grid-cols-[minmax(0,2fr)_120px_160px_auto] md:items-end">
+                  <label>
+                    <span class="mb-1.5 block text-sm font-medium text-[#46514B]">
+                      Produk
+                    </span>
+                    <select
+                      v-model="selectedSupplierProductId"
+                      :disabled="!supplierId || isLoadingSupplierProducts || isLoadingProducts"
+                      class="w-full rounded-md border border-[#D6DDD9] bg-white px-3 py-2.5 text-sm text-[#17201C] outline-none focus:border-[#176B4D] focus:ring-2 focus:ring-[#176B4D]/20 disabled:cursor-not-allowed disabled:bg-[#F1F4F2]"
+                      @change="selectedSupplierProductChanged"
                     >
-                      Hapus
-                    </button>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </section>
+                      <option value="">
+                        {{
+                          !supplierId
+                            ? 'Pilih supplier terlebih dahulu'
+                            : isLoadingSupplierProducts
+                              ? 'Memuat produk...'
+                              : 'Pilih produk'
+                        }}
+                      </option>
+                      <option
+                        v-for="option in productOptions"
+                        :key="option.supplierProduct.id"
+                        :value="option.supplierProduct.id"
+                      >
+                        {{ option.product.name }} — {{ option.product.sku }}
+                      </option>
+                    </select>
+                  </label>
 
-        <section
-          class="rounded-xl border border-gray-200 bg-white p-6"
-        >
-          <h2
-            class="text-lg font-semibold text-gray-900"
-          >
-            Ringkasan biaya
-          </h2>
+                  <label>
+                    <span class="mb-1.5 block text-sm font-medium text-[#46514B]">
+                      Jumlah
+                    </span>
+                    <input
+                      v-model.number="selectedQuantity"
+                      type="number"
+                      min="1"
+                      step="1"
+                      class="w-full rounded-md border border-[#D6DDD9] bg-white px-3 py-2.5 text-right text-sm text-[#17201C] outline-none focus:border-[#176B4D] focus:ring-2 focus:ring-[#176B4D]/20"
+                    />
+                  </label>
 
-          <div
-            class="mt-5 grid gap-5 md:grid-cols-3"
-          >
-            <label>
-              <span
-                class="mb-1 block text-sm font-medium text-gray-700"
-              >
-                Diskon
-              </span>
+                  <label>
+                    <span class="mb-1.5 block text-sm font-medium text-[#46514B]">
+                      Harga beli
+                    </span>
+                    <input
+                      v-model.number="selectedUnitPrice"
+                      type="number"
+                      min="0"
+                      step="1"
+                      :disabled="!selectedSupplierProductId"
+                      class="w-full rounded-md border border-[#D6DDD9] bg-white px-3 py-2.5 text-right text-sm text-[#17201C] outline-none focus:border-[#176B4D] focus:ring-2 focus:ring-[#176B4D]/20 disabled:cursor-not-allowed disabled:bg-[#F1F4F2]"
+                    />
+                  </label>
 
-              <input
-                v-model.number="discount"
-                type="number"
-                min="0"
-                step="1"
-                class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-green-700 focus:ring-2 focus:ring-green-700"
-              />
-            </label>
+                  <button
+                    type="button"
+                    class="inline-flex min-h-10 items-center justify-center rounded-md bg-[#176B4D] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#1F805D] focus:outline-none focus:ring-2 focus:ring-[#176B4D] focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    :disabled="!supplierId || isLoadingSupplierProducts"
+                    @click="addItem"
+                  >
+                    Tambah item
+                  </button>
+                </div>
 
-            <label>
-              <span
-                class="mb-1 block text-sm font-medium text-gray-700"
-              >
-                Pajak
-              </span>
-
-              <input
-                v-model.number="tax"
-                type="number"
-                min="0"
-                step="1"
-                class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-green-700 focus:ring-2 focus:ring-green-700"
-              />
-            </label>
-
-            <label>
-              <span
-                class="mb-1 block text-sm font-medium text-gray-700"
-              >
-                Biaya pengiriman
-              </span>
-
-              <input
-                v-model.number="shippingCost"
-                type="number"
-                min="0"
-                step="1"
-                class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-green-700 focus:ring-2 focus:ring-green-700"
-              />
-            </label>
-          </div>
-
-          <div
-            class="mt-6 border-t border-gray-200 pt-5"
-          >
-            <dl
-              class="ml-auto max-w-sm space-y-3 text-sm"
-            >
-              <div class="flex justify-between">
-                <dt class="text-gray-600">
-                  Subtotal
-                </dt>
-
-                <dd
-                  class="font-medium text-gray-900"
-                >
-                  {{ formatCurrency(subtotal) }}
-                </dd>
+                <p v-if="productError" class="mt-3 text-sm text-[#C0392B]" role="alert">
+                  {{ productError }}
+                </p>
               </div>
 
-              <div class="flex justify-between">
-                <dt class="text-gray-600">
-                  Diskon
-                </dt>
+              <p v-if="itemsError" class="mt-3 text-sm text-[#C0392B]" role="alert">
+                {{ itemsError }}
+              </p>
 
-                <dd
-                  class="font-medium text-gray-900"
-                >
-                  - {{ formatCurrency(discount) }}
-                </dd>
-              </div>
-
-              <div class="flex justify-between">
-                <dt class="text-gray-600">
-                  Pajak
-                </dt>
-
-                <dd
-                  class="font-medium text-gray-900"
-                >
-                  {{ formatCurrency(tax) }}
-                </dd>
-              </div>
-
-              <div class="flex justify-between">
-                <dt class="text-gray-600">
-                  Pengiriman
-                </dt>
-
-                <dd
-                  class="font-medium text-gray-900"
-                >
-                  {{ formatCurrency(shippingCost) }}
-                </dd>
+              <div
+                v-if="items.length === 0"
+                class="mt-5 rounded-md border border-dashed border-[#D6DDD9] bg-white px-5 py-8 text-center"
+              >
+                <p class="text-sm font-medium text-[#46514B]">
+                  Belum ada item purchase order
+                </p>
+                <p class="mt-1 text-xs text-[#6B756F]">
+                  {{
+                    supplierId
+                      ? 'Pilih produk, isi jumlah dan harga beli, lalu tekan Tambah item.'
+                      : 'Pilih supplier terlebih dahulu untuk memuat produk yang tersedia.'
+                  }}
+                </p>
               </div>
 
               <div
-                class="flex justify-between border-t border-gray-200 pt-3 text-base"
+                v-else
+                class="mt-5 overflow-x-auto rounded-md border border-[#D6DDD9]"
               >
-                <dt
-                  class="font-semibold text-gray-900"
-                >
-                  Grand Total
-                </dt>
+                <table class="min-w-full text-sm">
+                  <caption class="sr-only">Daftar item purchase order</caption>
+                  <thead class="border-b border-[#D6DDD9] bg-[#F1F4F2]">
+                    <tr>
+                      <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[#46514B]">
+                        Produk
+                      </th>
+                      <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[#46514B]">
+                        SKU
+                      </th>
+                      <th class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-[#46514B]">
+                        Qty
+                      </th>
+                      <th class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-[#46514B]">
+                        Harga
+                      </th>
+                      <th class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-[#46514B]">
+                        Subtotal
+                      </th>
+                      <th class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-[#46514B]">
+                        Aksi
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-[#E6EBE8]">
+                    <tr v-for="item in items" :key="item.supplierProductId" class="hover:bg-[#F8FAF9]">
+                      <td class="px-4 py-3">
+                        <div class="font-medium text-[#17201C]">{{ item.name }}</div>
+                      </td>
+                      <td class="px-4 py-3 font-mono text-xs text-[#6B756F]">
+                        {{ item.sku }}
+                      </td>
+                      <td class="px-4 py-3 text-right tabular-nums text-[#46514B]">
+                        {{ item.quantity }}
+                      </td>
+                      <td class="px-4 py-3 text-right tabular-nums text-[#46514B]">
+                        {{ formatCurrency(item.unitPrice) }}
+                      </td>
+                      <td class="px-4 py-3 text-right font-semibold tabular-nums text-[#17201C]">
+                        {{ formatCurrency(item.quantity * item.unitPrice) }}
+                      </td>
+                      <td class="px-4 py-3 text-right">
+                        <button
+                          type="button"
+                          class="rounded-md px-2.5 py-1.5 text-xs font-semibold text-[#C0392B] hover:bg-[#FEF4F3] focus:outline-none focus:ring-2 focus:ring-[#C0392B] focus:ring-offset-1"
+                          @click="removeItem(item.supplierProductId)"
+                        >
+                          Hapus
+                        </button>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </section>
 
-                <dd
-                  class="font-semibold text-gray-900"
-                >
-                  {{ formatCurrency(grandTotal) }}
+          <!-- Cost adjustments -->
+          <section class="rounded-lg border border-[#D6DDD9] bg-white">
+            <div class="border-b border-[#E6EBE8] px-5 py-4 sm:px-6">
+              <h2 class="text-[18px] font-semibold leading-6 text-[#17201C]">
+                Penyesuaian biaya
+              </h2>
+              <p class="mt-1 text-[13px] leading-[18px] text-[#6B756F]">
+                Masukkan diskon, pajak, dan biaya pengiriman jika ada.
+              </p>
+            </div>
+
+            <div class="grid gap-5 p-5 sm:p-6 md:grid-cols-3">
+              <label>
+                <span class="mb-1.5 block text-sm font-medium text-[#46514B]">Diskon</span>
+                <input
+                  v-model.number="discount"
+                  type="number"
+                  min="0"
+                  step="1"
+                  class="w-full rounded-md border border-[#D6DDD9] px-3 py-2.5 text-right text-sm tabular-nums outline-none focus:border-[#176B4D] focus:ring-2 focus:ring-[#176B4D]/20"
+                />
+              </label>
+              <label>
+                <span class="mb-1.5 block text-sm font-medium text-[#46514B]">Pajak</span>
+                <input
+                  v-model.number="tax"
+                  type="number"
+                  min="0"
+                  step="1"
+                  class="w-full rounded-md border border-[#D6DDD9] px-3 py-2.5 text-right text-sm tabular-nums outline-none focus:border-[#176B4D] focus:ring-2 focus:ring-[#176B4D]/20"
+                />
+              </label>
+              <label>
+                <span class="mb-1.5 block text-sm font-medium text-[#46514B]">Biaya pengiriman</span>
+                <input
+                  v-model.number="shippingCost"
+                  type="number"
+                  min="0"
+                  step="1"
+                  class="w-full rounded-md border border-[#D6DDD9] px-3 py-2.5 text-right text-sm tabular-nums outline-none focus:border-[#176B4D] focus:ring-2 focus:ring-[#176B4D]/20"
+                />
+              </label>
+            </div>
+          </section>
+
+          <!-- Mobile actions -->
+          <div class="flex flex-col gap-3 pb-2 sm:flex-row sm:justify-end lg:hidden">
+            <button
+              type="button"
+              class="rounded-md border border-[#D6DDD9] bg-white px-4 py-2.5 text-sm font-semibold text-[#46514B] hover:bg-[#F1F4F2] focus:outline-none focus:ring-2 focus:ring-[#176B4D] focus:ring-offset-2"
+              @click="router.push('/purchase-orders')"
+            >
+              Batal
+            </button>
+            <button
+              type="submit"
+              :disabled="isSaving"
+              class="rounded-md bg-[#176B4D] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#1F805D] focus:outline-none focus:ring-2 focus:ring-[#176B4D] focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {{ isSaving ? 'Menyimpan...' : 'Simpan sebagai Draft' }}
+            </button>
+          </div>
+        </form>
+
+        <!-- Sticky context / summary -->
+        <aside class="lg:sticky lg:top-6 lg:self-start">
+          <section class="rounded-lg border border-[#D6DDD9] bg-white">
+            <div class="border-b border-[#E6EBE8] px-5 py-4">
+              <h2 class="text-base font-semibold text-[#17201C]">
+                Ringkasan PO
+              </h2>
+              <p class="mt-1 text-xs text-[#6B756F]">
+                Periksa dampak finansial sebelum menyimpan.
+              </p>
+            </div>
+
+            <dl class="space-y-3 px-5 py-5 text-sm">
+              <div class="flex items-start justify-between gap-4">
+                <dt class="text-[#6B756F]">Supplier</dt>
+                <dd class="max-w-[190px] text-right font-medium text-[#17201C]">
+                  {{
+                    suppliers.find((supplier) => supplier.id === supplierId)?.name ||
+                    'Belum dipilih'
+                  }}
                 </dd>
               </div>
+
+              <div class="flex items-center justify-between gap-4">
+                <dt class="text-[#6B756F]">Total item</dt>
+                <dd class="font-semibold tabular-nums text-[#17201C]">{{ items.length }}</dd>
+              </div>
+
+              <div class="flex items-center justify-between gap-4">
+                <dt class="text-[#6B756F]">Total quantity</dt>
+                <dd class="font-semibold tabular-nums text-[#17201C]">
+                  {{ items.reduce((sum, item) => sum + item.quantity, 0) }}
+                </dd>
+              </div>
+
+              <div class="border-t border-[#E6EBE8] pt-3">
+                <div class="flex items-center justify-between gap-4">
+                  <dt class="text-[#6B756F]">Subtotal</dt>
+                  <dd class="font-medium tabular-nums text-[#17201C]">
+                    {{ formatCurrency(subtotal) }}
+                  </dd>
+                </div>
+                <div class="mt-2 flex items-center justify-between gap-4">
+                  <dt class="text-[#6B756F]">Diskon</dt>
+                  <dd class="font-medium tabular-nums text-[#46514B]">
+                    − {{ formatCurrency(discount) }}
+                  </dd>
+                </div>
+                <div class="mt-2 flex items-center justify-between gap-4">
+                  <dt class="text-[#6B756F]">Pajak</dt>
+                  <dd class="font-medium tabular-nums text-[#46514B]">
+                    {{ formatCurrency(tax) }}
+                  </dd>
+                </div>
+                <div class="mt-2 flex items-center justify-between gap-4">
+                  <dt class="text-[#6B756F]">Pengiriman</dt>
+                  <dd class="font-medium tabular-nums text-[#46514B]">
+                    {{ formatCurrency(shippingCost) }}
+                  </dd>
+                </div>
+              </div>
+
+              <div class="mt-4 border-t border-[#D6DDD9] pt-4">
+                <div class="flex items-end justify-between gap-4">
+                  <dt class="font-semibold text-[#17201C]">Grand Total</dt>
+                  <dd class="text-xl font-bold tabular-nums text-[#12372A]">
+                    {{ formatCurrency(grandTotal) }}
+                  </dd>
+                </div>
+              </div>
             </dl>
+
+            <div class="border-t border-[#E6EBE8] bg-[#F8FAF9] px-5 py-4">
+              <p class="text-xs font-medium text-[#46514B]">
+                Draft belum masuk lifecycle approval sampai disubmit pada tahap berikutnya.
+              </p>
+            </div>
+          </section>
+
+          <div class="mt-4 hidden flex-col gap-3 lg:flex">
+            <button
+              type="button"
+              class="rounded-md border border-[#D6DDD9] bg-white px-4 py-2.5 text-sm font-semibold text-[#46514B] hover:bg-[#F1F4F2] focus:outline-none focus:ring-2 focus:ring-[#176B4D] focus:ring-offset-2"
+              @click="router.push('/purchase-orders')"
+            >
+              Batal
+            </button>
+            <button
+              type="submit"
+              form=""
+              :disabled="isSaving"
+              class="rounded-md bg-[#176B4D] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#1F805D] focus:outline-none focus:ring-2 focus:ring-[#176B4D] focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+              @click="handleSubmit"
+            >
+              {{ isSaving ? 'Menyimpan...' : 'Simpan sebagai Draft' }}
+            </button>
           </div>
-        </section>
-
-        <div
-          class="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end"
-        >
-          <button
-            type="button"
-            class="rounded-lg border border-gray-300 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-green-700 focus:ring-offset-2"
-            @click="
-              router.push('/purchase-orders')
-            "
-          >
-            Batal
-          </button>
-
-          <button
-            type="submit"
-            :disabled="isSaving"
-            class="rounded-lg bg-green-800 px-4 py-2.5 text-sm font-medium text-white hover:bg-green-900 disabled:cursor-not-allowed disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-green-700 focus:ring-offset-2"
-          >
-            {{
-              isSaving
-                ? 'Menyimpan...'
-                : 'Simpan sebagai Draft'
-            }}
-          </button>
-        </div>
-      </form>
+        </aside>
+      </div>
     </div>
   </section>
 </template>

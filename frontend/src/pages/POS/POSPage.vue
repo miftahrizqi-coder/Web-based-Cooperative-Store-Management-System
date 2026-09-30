@@ -1,5 +1,11 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref } from 'vue'
+import {
+  computed,
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+} from 'vue'
 
 import { useAuth } from '../../stores/auth'
 
@@ -18,7 +24,40 @@ import type {
   SaleResponse,
 } from '../../types/pos'
 
+/**
+ * Catatan token (DESIGN.md §3):
+ * Warna ditulis sebagai arbitrary value Tailwind agar langsung bekerja
+ * tanpa mengubah tailwind.config.
+ *
+ *  primary-900 #12372A | primary-700 #176B4D | primary-600 #1F805D
+ *  primary-100 #DCEFE7 | primary-50 #F0F8F5
+ *  neutral-950 #17201C | neutral-700 #46514B | neutral-500 #6B756F
+ *  neutral-300 #D6DDD9 | neutral-200 #E6EBE8 | neutral-100 #F1F4F2 | neutral-50 #F8FAF9
+ *  success #16834B | warning #B7791F (teks: #7A4F0F) | danger #C0392B (teks: #8E2A20)
+ */
+
 const { currentUser } = useAuth()
+
+/** Batas stok "menipis" untuk StockIndicator. Sesuaikan dengan aturan minimum stok toko. */
+const LOW_STOCK_THRESHOLD = 5
+
+const paymentOptions: { value: PaymentMethod; label: string }[] = [
+  { value: 'CASH' as PaymentMethod, label: 'Tunai' },
+  { value: 'BANK_TRANSFER' as PaymentMethod, label: 'Transfer bank' },
+  { value: 'DEBIT' as PaymentMethod, label: 'Debit' },
+  { value: 'OTHER' as PaymentMethod, label: 'Lainnya' },
+]
+
+function paymentLabel(method: string): string {
+  return (
+    paymentOptions.find((option) => option.value === method)?.label ??
+    method
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/* State                                                               */
+/* ------------------------------------------------------------------ */
 
 const searchInput = ref('')
 const barcodeInput = ref('')
@@ -36,37 +75,56 @@ const loadingMembers = ref(false)
 const submittingSale = ref(false)
 
 const productError = ref('')
+const addError = ref('')
 const barcodeError = ref('')
 const memberError = ref('')
 const checkoutError = ref('')
 
 const showMemberPicker = ref(false)
+const confirmingClear = ref(false)
 
-const paymentMethod = ref<PaymentMethod>('CASH')
+const paymentMethod = ref<PaymentMethod>('CASH' as PaymentMethod)
 const paidAmount = ref<number>(0)
+const paymentOpen = ref(false)
 const saleSuccess = ref<SaleResponse | null>(null)
+
+const isOnline = ref(
+  typeof navigator === 'undefined' ? true : navigator.onLine,
+)
+
+const announcement = ref('')
+const highlightedProductId = ref<string | null>(null)
 
 const searchRef = ref<HTMLInputElement | null>(null)
 const barcodeRef = ref<HTMLInputElement | null>(null)
+const dialogRef = ref<HTMLElement | null>(null)
+const amountRef = ref<HTMLInputElement | null>(null)
+const newSaleButtonRef = ref<HTMLButtonElement | null>(null)
+
+let payTrigger: HTMLElement | null = null
+let searchTimer: ReturnType<typeof setTimeout> | null = null
+let memberSearchTimer: ReturnType<typeof setTimeout> | null = null
+let announceTimer: ReturnType<typeof setTimeout> | null = null
+let productRequestId = 0
 
 const accessToken = computed(() =>
   localStorage.getItem('access_token'),
 )
 
+/* ------------------------------------------------------------------ */
+/* Turunan                                                             */
+/* ------------------------------------------------------------------ */
+
 const cartTotal = computed(() =>
   cart.value.reduce(
     (total, item) =>
-      total +
-      item.product.selling_price * item.quantity,
+      total + item.product.selling_price * item.quantity,
     0,
   ),
 )
 
 const cartItemCount = computed(() =>
-  cart.value.reduce(
-    (total, item) => total + item.quantity,
-    0,
-  ),
+  cart.value.reduce((total, item) => total + item.quantity, 0),
 )
 
 const paymentShortfall = computed(() =>
@@ -77,10 +135,46 @@ const changeAmount = computed(() =>
   Math.max(paidAmount.value - cartTotal.value, 0),
 )
 
-const paymentValid = computed(() =>
-  cart.value.length > 0 &&
-  paidAmount.value >= cartTotal.value,
+const paymentValid = computed(
+  () => cart.value.length > 0 && paidAmount.value >= cartTotal.value,
 )
+
+const paidAmountText = computed(() =>
+  paidAmount.value > 0
+    ? new Intl.NumberFormat('id-ID').format(paidAmount.value)
+    : '',
+)
+
+const quickAmounts = computed(() => {
+  const total = cartTotal.value
+  const values = new Set<number>([total])
+
+  for (const step of [10000, 50000, 100000]) {
+    values.add(Math.ceil(total / step) * step)
+  }
+
+  return [...values]
+    .filter((value) => value >= total && value > 0)
+    .sort((a, b) => a - b)
+    .slice(0, 4)
+})
+
+const soldUnits = computed(() =>
+  saleSuccess.value
+    ? saleSuccess.value.items.reduce(
+        (total, item) => total + item.quantity,
+        0,
+      )
+    : 0,
+)
+
+const canSubmit = computed(
+  () => paymentValid.value && !submittingSale.value && isOnline.value,
+)
+
+/* ------------------------------------------------------------------ */
+/* Helper                                                              */
+/* ------------------------------------------------------------------ */
 
 function formatCurrency(value: number): string {
   return new Intl.NumberFormat('id-ID', {
@@ -93,17 +187,74 @@ function formatCurrency(value: number): string {
 function formatStock(product: POSProduct): string {
   return `${product.stock} ${product.unit}`
 }
-function printReceipt() {
+
+type StockState = 'in' | 'low' | 'out'
+
+function stockState(product: POSProduct): StockState {
+  if (product.stock <= 0) return 'out'
+  if (product.stock <= LOW_STOCK_THRESHOLD) return 'low'
+  return 'in'
+}
+
+function stockLabel(product: POSProduct): string {
+  switch (stockState(product)) {
+    case 'out':
+      return 'Stok habis'
+    case 'low':
+      return `Stok menipis: ${formatStock(product)}`
+    default:
+      return `Stok: ${formatStock(product)}`
+  }
+}
+
+function stockClass(product: POSProduct): string {
+  switch (stockState(product)) {
+    case 'out':
+      return 'border-[#C0392B]/30 bg-[#FBEDEB] text-[#8E2A20]'
+    case 'low':
+      return 'border-[#B7791F]/30 bg-[#FBF3E2] text-[#7A4F0F]'
+    default:
+      return 'border-[#16834B]/25 bg-[#DCEFE7] text-[#12372A]'
+  }
+}
+
+function quantityInCart(productId: string): number {
+  return (
+    cart.value.find((item) => item.product.id === productId)
+      ?.quantity ?? 0
+  )
+}
+
+function announce(message: string, productId?: string): void {
+  announcement.value = message
+  highlightedProductId.value = productId ?? null
+
+  if (announceTimer) {
+    clearTimeout(announceTimer)
+  }
+
+  announceTimer = setTimeout(() => {
+    announcement.value = ''
+    highlightedProductId.value = null
+  }, 2500)
+}
+
+async function focusSearch(): Promise<void> {
+  await nextTick()
+  searchRef.value?.focus()
+}
+
+function printReceipt(): void {
   if (!saleSuccess.value) {
     return
   }
 
   window.print()
 }
-async function focusSearch(): Promise<void> {
-  await nextTick()
-  searchRef.value?.focus()
-}
+
+/* ------------------------------------------------------------------ */
+/* Produk & barcode                                                    */
+/* ------------------------------------------------------------------ */
 
 async function loadProducts(): Promise<void> {
   const token = accessToken.value
@@ -113,27 +264,35 @@ async function loadProducts(): Promise<void> {
     return
   }
 
+  const requestId = ++productRequestId
+
   loadingProducts.value = true
   productError.value = ''
 
   try {
-    products.value = await searchPOSProducts(
-      token,
-      searchInput.value,
-    )
+    const result = await searchPOSProducts(token, searchInput.value)
+
+    // Abaikan respons lama yang tiba setelah pencarian yang lebih baru.
+    if (requestId === productRequestId) {
+      products.value = result
+    }
   } catch (error) {
-    productError.value =
-      error instanceof Error
-        ? error.message
-        : 'Gagal mengambil produk.'
+    if (requestId === productRequestId) {
+      productError.value =
+        error instanceof Error
+          ? error.message
+          : 'Gagal mengambil produk.'
+    }
   } finally {
-    loadingProducts.value = false
+    if (requestId === productRequestId) {
+      loadingProducts.value = false
+    }
   }
 }
 
-let searchTimer: ReturnType<typeof setTimeout> | null = null
-
 function handleProductSearch(): void {
+  addError.value = ''
+
   if (searchTimer) {
     clearTimeout(searchTimer)
   }
@@ -143,11 +302,12 @@ function handleProductSearch(): void {
   }, 250)
 }
 
-async function lookupBarcode(): Promise<void> {
-  const barcode = barcodeInput.value.trim()
+async function lookupBarcode(rawCode?: string): Promise<void> {
+  const fromSearch = typeof rawCode === 'string'
+  const barcode = (fromSearch ? rawCode : barcodeInput.value).trim()
 
   if (!barcode) {
-    barcodeError.value = 'Masukkan barcode terlebih dahulu.'
+    barcodeError.value = 'Masukkan atau scan barcode terlebih dahulu.'
     return
   }
 
@@ -160,68 +320,102 @@ async function lookupBarcode(): Promise<void> {
 
   loadingBarcode.value = true
   barcodeError.value = ''
+  addError.value = ''
 
   try {
-    const product = await getPOSProductByBarcode(
-      token,
-      barcode,
-    )
+    const product = await getPOSProductByBarcode(token, barcode)
 
     addToCart(product)
 
     barcodeInput.value = ''
+
+    if (fromSearch) {
+      if (searchTimer) {
+        clearTimeout(searchTimer)
+      }
+
+      searchInput.value = ''
+      void loadProducts()
+    }
 
     await focusSearch()
   } catch (error) {
     barcodeError.value =
       error instanceof Error
         ? error.message
-        : 'Produk tidak ditemukan.'
+        : 'Produk dengan barcode ini tidak ditemukan.'
   } finally {
     loadingBarcode.value = false
   }
 }
 
-function getCartItem(
-  productId: string,
-): CartItem | undefined {
-  return cart.value.find(
-    (item) => item.product.id === productId,
-  )
+function handleSearchKeydown(event: KeyboardEvent): void {
+  if (event.key !== 'Enter') {
+    return
+  }
+
+  event.preventDefault()
+
+  const value = searchInput.value.trim()
+
+  // Scanner barcode berperilaku seperti keyboard: angka panjang + Enter.
+  if (/^\d{8,}$/.test(value)) {
+    void lookupBarcode(value)
+    return
+  }
+
+  if (products.value.length === 1) {
+    addToCart(products.value[0])
+  }
 }
 
+function handleBarcodeKeydown(event: KeyboardEvent): void {
+  if (event.key === 'Enter') {
+    event.preventDefault()
+    void lookupBarcode()
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Keranjang                                                           */
+/* ------------------------------------------------------------------ */
+
 function addToCart(product: POSProduct): void {
-  productError.value = ''
+  addError.value = ''
 
   if (!product.is_active) {
-    productError.value =
-      `Produk ${product.name} tidak aktif.`
+    addError.value = `${product.name} tidak aktif dan tidak dapat dijual.`
     return
   }
 
   if (product.stock <= 0) {
-    productError.value =
-      `Stok ${product.name} habis.`
+    addError.value = `Stok ${product.name} habis.`
     return
   }
 
-  const existing = getCartItem(product.id)
+  const existing = cart.value.find(
+    (item) => item.product.id === product.id,
+  )
 
   if (existing) {
     if (existing.quantity >= product.stock) {
-      productError.value =
-        `Jumlah ${product.name} tidak boleh melebihi stok.`
+      addError.value = `Jumlah ${product.name} tidak boleh melebihi stok (${formatStock(product)}).`
       return
     }
 
     existing.quantity += 1
+    announce(
+      `${product.name} ditambahkan. Jumlah di keranjang: ${existing.quantity}.`,
+      product.id,
+    )
     return
   }
 
-  cart.value.push({
-    product,
-    quantity: 1,
-  })
+  cart.value.push({ product, quantity: 1 })
+  announce(
+    `${product.name} ditambahkan ke keranjang. Jumlah: 1.`,
+    product.id,
+  )
 }
 
 function increaseQuantity(item: CartItem): void {
@@ -242,25 +436,33 @@ function decreaseQuantity(item: CartItem): void {
 }
 
 function removeFromCart(productId: string): void {
+  const removed = cart.value.find(
+    (item) => item.product.id === productId,
+  )
+
   cart.value = cart.value.filter(
     (item) => item.product.id !== productId,
   )
+
+  if (removed) {
+    announce(`${removed.product.name} dihapus dari keranjang.`)
+  }
 }
 
 function clearCart(): void {
   cart.value = []
   selectedMember.value = null
   showMemberPicker.value = false
-
+  confirmingClear.value = false
+  addError.value = ''
+  announce('Keranjang dikosongkan.')
   resetPayment()
+  void focusSearch()
 }
 
-function resetPayment(): void {
-  paymentMethod.value = 'CASH'
-  paidAmount.value = 0
-  checkoutError.value = ''
-  saleSuccess.value = null
-}
+/* ------------------------------------------------------------------ */
+/* Anggota                                                             */
+/* ------------------------------------------------------------------ */
 
 async function loadMembers(): Promise<void> {
   const token = accessToken.value
@@ -274,10 +476,7 @@ async function loadMembers(): Promise<void> {
   memberError.value = ''
 
   try {
-    members.value = await searchPOSMembers(
-      token,
-      memberSearch.value,
-    )
+    members.value = await searchPOSMembers(token, memberSearch.value)
   } catch (error) {
     memberError.value =
       error instanceof Error
@@ -287,8 +486,6 @@ async function loadMembers(): Promise<void> {
     loadingMembers.value = false
   }
 }
-
-let memberSearchTimer: ReturnType<typeof setTimeout> | null = null
 
 function handleMemberSearch(): void {
   if (memberSearchTimer) {
@@ -309,77 +506,102 @@ function selectMember(member: POSMember): void {
   showMemberPicker.value = false
   memberSearch.value = ''
   members.value = []
+  announce(`Anggota ${member.name} dipilih.`)
 }
 
 function removeMember(): void {
   selectedMember.value = null
 }
 
-function handleSearchKeydown(
-  event: KeyboardEvent,
-): void {
-  if (event.key === 'Enter') {
-    event.preventDefault()
+/* ------------------------------------------------------------------ */
+/* Pembayaran                                                          */
+/* ------------------------------------------------------------------ */
 
-    if (products.value.length === 1) {
-      addToCart(products.value[0])
-    }
-  }
+function resetPayment(): void {
+  paymentMethod.value = 'CASH' as PaymentMethod
+  paidAmount.value = 0
+  checkoutError.value = ''
+  saleSuccess.value = null
+  paymentOpen.value = false
 }
 
-function handleBarcodeKeydown(
-  event: KeyboardEvent,
-): void {
-  if (event.key === 'Enter') {
-    event.preventDefault()
-    void lookupBarcode()
+async function openPayment(): Promise<void> {
+  if (cart.value.length === 0) {
+    return
   }
+
+  payTrigger = document.activeElement as HTMLElement | null
+
+  checkoutError.value = ''
+  paymentMethod.value = 'CASH' as PaymentMethod
+  paidAmount.value = 0
+  paymentOpen.value = true
+
+  await nextTick()
+  amountRef.value?.focus()
 }
 
-function handlePaidAmountInput(): void {
-  if (
-    Number.isNaN(paidAmount.value) ||
-    paidAmount.value < 0
-  ) {
-    paidAmount.value = 0
+async function closePayment(): Promise<void> {
+  // Selama diproses atau setelah sukses, dialog tidak boleh ditutup sembarangan.
+  if (submittingSale.value || saleSuccess.value) {
+    return
   }
+
+  paymentOpen.value = false
+  await nextTick()
+
+  if (payTrigger && document.contains(payTrigger)) {
+    payTrigger.focus()
+  } else {
+    void focusSearch()
+  }
+
+  payTrigger = null
+}
+
+function selectPaymentMethod(method: PaymentMethod): void {
+  paymentMethod.value = method
+  checkoutError.value = ''
+
+  // Non-tunai dibayar pas; tunai diisi kasir.
+  paidAmount.value = method === ('CASH' as PaymentMethod) ? 0 : cartTotal.value
+}
+
+function handlePaidAmountInput(event: Event): void {
+  const target = event.target as HTMLInputElement
+  const digits = target.value.replace(/\D/g, '')
+
+  paidAmount.value = digits ? Number(digits) : 0
+  target.value = paidAmountText.value
 }
 
 async function submitSale(): Promise<void> {
+  if (submittingSale.value || saleSuccess.value) {
+    return
+  }
+
   checkoutError.value = ''
 
   if (cart.value.length === 0) {
-    checkoutError.value =
-      'Keranjang masih kosong.'
+    checkoutError.value = 'Keranjang masih kosong.'
     return
   }
 
   if (paidAmount.value < cartTotal.value) {
+    checkoutError.value = 'Nominal pembayaran masih kurang.'
+    return
+  }
+
+  if (!isOnline.value) {
     checkoutError.value =
-      'Nominal pembayaran masih kurang.'
+      'Koneksi terputus. Jangan tutup halaman. Periksa koneksi sebelum mengulangi transaksi.'
     return
   }
 
   const token = accessToken.value
 
   if (!token) {
-    checkoutError.value =
-      'Sesi login tidak ditemukan.'
-    return
-  }
-
-  const confirmed = window.confirm(
-    [
-      'Konfirmasi transaksi?',
-      '',
-      `Total: ${formatCurrency(cartTotal.value)}`,
-      `Dibayar: ${formatCurrency(paidAmount.value)}`,
-      `Kembalian: ${formatCurrency(changeAmount.value)}`,
-      `Metode: ${paymentMethod.value}`,
-    ].join('\n'),
-  )
-
-  if (!confirmed) {
+    checkoutError.value = 'Sesi login tidak ditemukan.'
     return
   }
 
@@ -404,11 +626,16 @@ async function submitSale(): Promise<void> {
         0,
       )
     }
+
+    await nextTick()
+    newSaleButtonRef.value?.focus()
   } catch (error) {
-    checkoutError.value =
+    const reason =
       error instanceof Error
         ? error.message
         : 'Transaksi gagal diproses.'
+
+    checkoutError.value = `${reason} Keranjang Anda tidak dihapus. Bila ragu, periksa Riwayat Penjualan sebelum mengulangi agar transaksi tidak tercatat ganda.`
   } finally {
     submittingSale.value = false
   }
@@ -420,802 +647,1152 @@ function startNewSale(): void {
   memberSearch.value = ''
   members.value = []
   showMemberPicker.value = false
+  confirmingClear.value = false
 
   searchInput.value = ''
   barcodeInput.value = ''
 
   productError.value = ''
+  addError.value = ''
   barcodeError.value = ''
   memberError.value = ''
-  checkoutError.value = ''
 
-  paymentMethod.value = 'CASH'
-  paidAmount.value = 0
-  saleSuccess.value = null
+  resetPayment()
 
   void loadProducts()
   void focusSearch()
 }
 
+/* ------------------------------------------------------------------ */
+/* Keyboard, fokus, koneksi                                            */
+/* ------------------------------------------------------------------ */
+
+function onDialogKeydown(event: KeyboardEvent): void {
+  if (event.key === 'Escape') {
+    event.stopPropagation()
+    void closePayment()
+    return
+  }
+
+  if (event.key !== 'Tab' || !dialogRef.value) {
+    return
+  }
+
+  const focusable = dialogRef.value.querySelectorAll<HTMLElement>(
+    'button:not([disabled]), [href], input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])',
+  )
+
+  if (focusable.length === 0) {
+    return
+  }
+
+  const first = focusable[0]
+  const last = focusable[focusable.length - 1]
+
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault()
+    last.focus()
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault()
+    first.focus()
+  }
+}
+
+function onGlobalKeydown(event: KeyboardEvent): void {
+  if (event.key !== '/' || paymentOpen.value) {
+    return
+  }
+
+  const target = event.target as HTMLElement | null
+  const tag = target?.tagName
+
+  if (
+    tag === 'INPUT' ||
+    tag === 'TEXTAREA' ||
+    tag === 'SELECT' ||
+    target?.isContentEditable
+  ) {
+    return
+  }
+
+  event.preventDefault()
+  searchRef.value?.focus()
+}
+
+function setOnline(): void {
+  isOnline.value = true
+}
+
+function setOffline(): void {
+  isOnline.value = false
+}
+
+function scrollToCart(): void {
+  document
+    .getElementById('cart-panel')
+    ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
 onMounted(async () => {
+  window.addEventListener('keydown', onGlobalKeydown)
+  window.addEventListener('online', setOnline)
+  window.addEventListener('offline', setOffline)
+
   await loadProducts()
   await focusSearch()
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onGlobalKeydown)
+  window.removeEventListener('online', setOnline)
+  window.removeEventListener('offline', setOffline)
+
+  if (searchTimer) clearTimeout(searchTimer)
+  if (memberSearchTimer) clearTimeout(memberSearchTimer)
+  if (announceTimer) clearTimeout(announceTimer)
 })
 </script>
 
 <template>
-  <div class="mx-auto max-w-7xl space-y-4">
-    <div>
-      <h1 class="text-2xl font-semibold text-gray-900">
-        POS
-      </h1>
+  <div class="mx-auto max-w-[1440px] space-y-4 pb-24 text-[#17201C] lg:pb-0">
+    <!-- Header -->
+    <header class="flex flex-wrap items-end justify-between gap-2">
+      <div>
+        <h1 class="text-[28px] font-semibold leading-9">
+          Point of Sale
+        </h1>
 
-      <p class="mt-1 text-sm text-gray-500">
-        Kasir:
-        {{ currentUser?.name || currentUser?.username || '-' }}
+        <p class="text-sm text-[#46514B]">
+          Kasir:
+          <span class="font-medium text-[#17201C]">
+            {{ currentUser?.name || currentUser?.username || '-' }}
+          </span>
+        </p>
+      </div>
+
+      <p class="hidden text-[13px] text-[#6B756F] sm:block">
+        Tekan
+        <kbd class="rounded border border-[#D6DDD9] bg-[#F1F4F2] px-1.5 py-0.5 text-xs font-medium text-[#46514B]">/</kbd>
+        untuk mencari produk
       </p>
+    </header>
+
+    <!-- Koneksi terputus -->
+    <div
+      v-if="!isOnline"
+      role="alert"
+      class="rounded-lg border border-[#C0392B]/30 bg-[#FBEDEB] px-4 py-3 text-sm text-[#8E2A20]"
+    >
+      <strong class="font-semibold">Koneksi terputus.</strong>
+      Jangan tutup halaman. Periksa koneksi sebelum mengulangi transaksi.
+      Tombol bayar dinonaktifkan sampai koneksi kembali.
     </div>
 
-    <div
-      class="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]"
+    <!-- Search / Scan -->
+    <section
+      class="rounded-lg border border-[#D6DDD9] bg-white p-4"
+      aria-label="Cari atau scan produk"
     >
-      <!-- Product workspace -->
-      <section
-        class="rounded-xl border bg-white p-4"
-        aria-labelledby="product-section-title"
+      <div class="grid gap-3 md:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+        <div>
+          <label
+            for="product-search"
+            class="mb-1.5 block text-xs font-medium leading-4 text-[#46514B]"
+          >
+            Cari produk (nama atau SKU)
+          </label>
+
+          <input
+            id="product-search"
+            ref="searchRef"
+            v-model="searchInput"
+            type="search"
+            autocomplete="off"
+            placeholder="Ketik nama atau SKU, atau scan barcode di sini"
+            class="focus-ring min-h-11 w-full rounded-lg border border-[#D6DDD9] bg-white px-3 text-base text-[#17201C] placeholder:text-[#6B756F] outline-none focus:border-[#176B4D]"
+            @input="handleProductSearch"
+            @keydown="handleSearchKeydown"
+          />
+        </div>
+
+        <div>
+          <label
+            for="barcode-search"
+            class="mb-1.5 block text-xs font-medium leading-4 text-[#46514B]"
+          >
+            Scan barcode
+          </label>
+
+          <div class="flex gap-2">
+            <input
+              id="barcode-search"
+              ref="barcodeRef"
+              v-model="barcodeInput"
+              type="text"
+              inputmode="numeric"
+              autocomplete="off"
+              placeholder="Scan atau ketik barcode"
+              class="focus-ring min-h-11 min-w-0 flex-1 rounded-lg border border-[#D6DDD9] bg-white px-3 text-base tabular-nums text-[#17201C] placeholder:text-[#6B756F] outline-none focus:border-[#176B4D]"
+              @keydown="handleBarcodeKeydown"
+            />
+
+            <button
+              type="button"
+              class="focus-ring min-h-11 rounded-lg border border-[#D6DDD9] bg-white px-4 text-sm font-semibold text-[#17201C] hover:bg-[#F1F4F2] disabled:cursor-not-allowed disabled:opacity-50"
+              :disabled="loadingBarcode"
+              @click="lookupBarcode()"
+            >
+              {{ loadingBarcode ? 'Mencari...' : 'Cari' }}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <p
+        v-if="barcodeError"
+        role="alert"
+        class="mt-3 rounded-lg border border-[#C0392B]/30 bg-[#FBEDEB] px-3 py-2 text-sm text-[#8E2A20]"
       >
-        <div class="mb-4">
+        {{ barcodeError }}
+      </p>
+
+      <p
+        v-if="addError"
+        role="alert"
+        class="mt-3 rounded-lg border border-[#B7791F]/30 bg-[#FBF3E2] px-3 py-2 text-sm text-[#7A4F0F]"
+      >
+        {{ addError }}
+      </p>
+
+      <!-- Umpan balik penambahan produk (visual + screen reader) -->
+      <p
+        role="status"
+        aria-live="polite"
+        class="mt-3 min-h-5 text-[13px] font-medium text-[#176B4D]"
+      >
+        {{ announcement }}
+      </p>
+    </section>
+
+    <div class="grid gap-4 lg:grid-cols-[55fr_45fr] lg:items-start">
+      <!-- Product workspace (±55%) -->
+      <section
+        aria-labelledby="product-section-title"
+        class="rounded-lg border border-[#D6DDD9] bg-white p-4"
+      >
+        <div class="mb-4 flex items-baseline justify-between gap-3">
           <h2
             id="product-section-title"
-            class="text-lg font-semibold"
+            class="text-lg font-semibold leading-[26px]"
           >
             Produk
           </h2>
 
-          <p class="text-sm text-gray-500">
-            Cari berdasarkan nama, SKU, atau gunakan barcode.
+          <p
+            v-if="!loadingProducts && !productError && products.length"
+            class="text-[13px] tabular-nums text-[#6B756F]"
+          >
+            {{ products.length }} hasil
           </p>
         </div>
 
-        <div class="grid gap-3 sm:grid-cols-2">
-          <div>
-            <label
-              for="product-search"
-              class="mb-1 block text-sm font-medium text-gray-700"
-            >
-              Cari produk
-            </label>
-
-            <input
-              id="product-search"
-              ref="searchRef"
-              v-model="searchInput"
-              type="search"
-              autocomplete="off"
-              placeholder="Nama, SKU, barcode..."
-              class="min-h-11 w-full rounded-lg border px-3 text-base outline-none focus:border-gray-500 focus:ring-2 focus:ring-gray-200"
-              @input="handleProductSearch"
-              @keydown="handleSearchKeydown"
-            />
-          </div>
-
-          <div>
-            <label
-              for="barcode-search"
-              class="mb-1 block text-sm font-medium text-gray-700"
-            >
-              Scan barcode
-            </label>
-
-            <div class="flex gap-2">
-              <input
-                id="barcode-search"
-                ref="barcodeRef"
-                v-model="barcodeInput"
-                type="text"
-                inputmode="numeric"
-                autocomplete="off"
-                placeholder="Scan / ketik barcode"
-                class="min-h-11 min-w-0 flex-1 rounded-lg border px-3 text-base outline-none focus:border-gray-500 focus:ring-2 focus:ring-gray-200"
-                @keydown="handleBarcodeKeydown"
-              />
-
-              <button
-                type="button"
-                class="min-h-11 rounded-lg bg-gray-900 px-4 text-sm font-medium text-white hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
-                :disabled="loadingBarcode"
-                @click="lookupBarcode"
-              >
-                {{ loadingBarcode ? '...' : 'Cari' }}
-              </button>
-            </div>
-          </div>
+        <!-- Loading -->
+        <div
+          v-if="loadingProducts"
+          class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3"
+          role="status"
+          aria-busy="true"
+        >
+          <span class="sr-only">Memuat produk...</span>
+          <div
+            v-for="index in 6"
+            :key="index"
+            class="h-28 animate-pulse rounded-lg bg-[#F1F4F2]"
+          />
         </div>
 
-        <p
-          v-if="barcodeError"
-          class="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700"
+        <!-- Error -->
+        <div
+          v-else-if="productError"
           role="alert"
+          class="rounded-lg border border-[#C0392B]/30 bg-[#FBEDEB] p-5"
         >
-          {{ barcodeError }}
-        </p>
+          <p class="font-semibold text-[#8E2A20]">
+            Produk tidak dapat dimuat
+          </p>
+          <p class="mt-1 text-sm text-[#8E2A20]">
+            {{ productError }}
+          </p>
+          <p class="mt-1 text-sm text-[#46514B]">
+            Keranjang tidak terpengaruh. Coba muat ulang daftar produk.
+          </p>
+          <button
+            type="button"
+            class="focus-ring mt-3 min-h-11 rounded-lg border border-[#C0392B]/40 bg-white px-4 text-sm font-semibold text-[#8E2A20] hover:bg-[#FBEDEB]"
+            @click="loadProducts"
+          >
+            Coba lagi
+          </button>
+        </div>
 
-        <p
-          v-if="productError"
-          class="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700"
-          role="alert"
+        <!-- Empty -->
+        <div
+          v-else-if="products.length === 0"
+          class="rounded-lg border border-dashed border-[#D6DDD9] px-6 py-10 text-center"
         >
-          {{ productError }}
-        </p>
-
-        <div class="mt-4">
-          <div
-            v-if="loadingProducts"
-            class="space-y-3"
-            aria-label="Memuat produk"
-          >
-            <div
-              v-for="index in 4"
-              :key="index"
-              class="h-20 animate-pulse rounded-lg bg-gray-100"
-            ></div>
-          </div>
-
-          <div
-            v-else-if="products.length === 0"
-            class="rounded-lg border border-dashed p-8 text-center"
-          >
-            <p class="font-medium text-gray-700">
-              Produk tidak ditemukan
+          <template v-if="searchInput.trim()">
+            <p class="font-semibold">
+              Tidak ada produk untuk "{{ searchInput.trim() }}"
             </p>
-
-            <p class="mt-1 text-sm text-gray-500">
-              Coba kata kunci lain atau gunakan barcode.
+            <p class="mx-auto mt-1 max-w-sm text-sm text-[#46514B]">
+              Periksa ejaan, coba nama atau SKU lain, atau scan barcode
+              produk.
             </p>
-          </div>
+          </template>
 
-          <div
-            v-else
-            class="grid gap-3 sm:grid-cols-2"
+          <template v-else>
+            <p class="font-semibold">
+              Belum ada produk yang bisa dijual
+            </p>
+            <p class="mx-auto mt-1 max-w-sm text-sm text-[#46514B]">
+              Daftar produk kosong. Hubungi Admin untuk menambahkan
+              produk ke katalog.
+            </p>
+          </template>
+        </div>
+
+        <!-- Hasil -->
+        <ul
+          v-else
+          class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3"
+        >
+          <li
+            v-for="product in products"
+            :key="product.id"
           >
             <button
-              v-for="product in products"
-              :key="product.id"
               type="button"
-              class="rounded-lg border p-4 text-left transition hover:border-gray-400 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-400 disabled:cursor-not-allowed disabled:opacity-50"
-              :disabled="product.stock <= 0"
+              class="focus-ring flex h-full w-full flex-col justify-between rounded-lg border p-3 text-left transition-colors disabled:cursor-not-allowed"
+              :class="
+                !product.is_active || product.stock <= 0
+                  ? 'border-[#E6EBE8] bg-[#F8FAF9] opacity-75'
+                  : highlightedProductId === product.id
+                    ? 'border-[#176B4D] bg-[#F0F8F5]'
+                    : 'border-[#D6DDD9] bg-white hover:border-[#176B4D] hover:bg-[#F0F8F5]'
+              "
+              :disabled="!product.is_active || product.stock <= 0"
+              :aria-label="`Tambah ${product.name} ke keranjang, ${formatCurrency(product.selling_price)}, ${stockLabel(product)}`"
               @click="addToCart(product)"
             >
-              <div
-                class="flex items-start justify-between gap-3"
-              >
-                <div class="min-w-0">
-                  <p
-                    class="font-medium text-gray-900"
-                  >
-                    {{ product.name }}
-                  </p>
+              <div>
+                <p class="text-sm font-semibold leading-5 text-[#17201C]">
+                  {{ product.name }}
+                </p>
 
-                  <p class="mt-1 text-xs text-gray-500">
-                    {{ product.sku }}
+                <p class="mt-0.5 text-[13px] leading-[18px] tabular-nums text-[#6B756F]">
+                  {{ product.sku }}
+                </p>
 
-                    <span v-if="product.barcode">
-                      · {{ product.barcode }}
-                    </span>
-                  </p>
-                </div>
-
-                <span
-                  class="shrink-0 rounded-full bg-gray-100 px-2 py-1 text-xs text-gray-600"
+                <p
+                  v-if="product.barcode"
+                  class="text-[13px] leading-[18px] tabular-nums text-[#6B756F]"
                 >
-                  {{ formatStock(product) }}
-                </span>
+                  {{ product.barcode }}
+                </p>
               </div>
 
-              <div
-                class="mt-3 flex items-center justify-between gap-3"
-              >
-                <span
-                  class="font-semibold text-gray-900"
-                >
+              <div class="mt-3">
+                <p class="text-base font-semibold tabular-nums">
                   {{ formatCurrency(product.selling_price) }}
-                </span>
+                </p>
 
-                <span
-                  class="text-xs text-gray-500"
-                >
-                  Klik untuk tambah
-                </span>
+                <div class="mt-2 flex flex-wrap items-center gap-1.5">
+                  <span
+                    class="inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-medium tabular-nums"
+                    :class="stockClass(product)"
+                  >
+                    <svg class="h-2.5 w-2.5" viewBox="0 0 10 10" aria-hidden="true">
+                      <circle
+                        v-if="stockState(product) === 'in'"
+                        cx="5" cy="5" r="4" fill="currentColor"
+                      />
+                      <path
+                        v-else-if="stockState(product) === 'low'"
+                        d="M5 1 9.5 9h-9z"
+                        fill="currentColor"
+                      />
+                      <path
+                        v-else
+                        d="M2 2l6 6M8 2 2 8"
+                        stroke="currentColor"
+                        stroke-width="1.75"
+                        stroke-linecap="round"
+                      />
+                    </svg>
+                    {{ stockLabel(product) }}
+                  </span>
+
+                  <span
+                    v-if="!product.is_active"
+                    class="rounded-full border border-[#D6DDD9] bg-[#F1F4F2] px-2 py-0.5 text-xs font-medium text-[#46514B]"
+                  >
+                    Produk nonaktif
+                  </span>
+
+                  <span
+                    v-if="quantityInCart(product.id) > 0"
+                    class="rounded-full border border-[#176B4D]/30 bg-[#DCEFE7] px-2 py-0.5 text-xs font-medium tabular-nums text-[#12372A]"
+                  >
+                    Di keranjang: {{ quantityInCart(product.id) }}
+                  </span>
+                </div>
               </div>
             </button>
-          </div>
-        </div>
+          </li>
+        </ul>
       </section>
 
-      <!-- Cart -->
+      <!-- Cart (±45%, dominan & persisten) -->
       <section
-        class="rounded-xl border bg-white p-4"
+        id="cart-panel"
         aria-labelledby="cart-section-title"
+        class="flex flex-col overflow-hidden rounded-lg border-2 border-[#176B4D]/40 bg-white lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)]"
       >
-        <div
-          class="flex items-center justify-between gap-3"
-        >
+        <div class="flex items-center justify-between gap-3 border-b border-[#E6EBE8] bg-[#F0F8F5] px-4 py-3">
           <div>
             <h2
               id="cart-section-title"
-              class="text-lg font-semibold"
+              class="text-lg font-semibold leading-[26px] text-[#12372A]"
             >
               Keranjang
             </h2>
 
-            <p class="text-sm text-gray-500">
+            <p class="text-[13px] tabular-nums text-[#46514B]">
               {{ cartItemCount }} item
             </p>
           </div>
 
-          <button
-            v-if="cart.length"
-            type="button"
-            class="min-h-11 rounded-lg px-3 text-sm font-medium text-red-600 hover:bg-red-50"
-            @click="clearCart"
-          >
-            Kosongkan
-          </button>
-        </div>
+          <div v-if="cart.length">
+            <button
+              v-if="!confirmingClear"
+              type="button"
+              class="focus-ring min-h-11 rounded-lg px-3 text-sm font-medium text-[#C0392B] hover:bg-[#FBEDEB]"
+              @click="confirmingClear = true"
+            >
+              Kosongkan
+            </button>
 
-        <div
-          v-if="cart.length === 0"
-          class="mt-4 rounded-lg border border-dashed p-8 text-center"
-        >
-          <p class="font-medium text-gray-700">
-            Keranjang masih kosong
-          </p>
-
-          <p class="mt-1 text-sm text-gray-500">
-            Pilih produk untuk memulai transaksi.
-          </p>
-        </div>
-
-        <div
-          v-else
-          class="mt-4 space-y-3"
-        >
-          <article
-            v-for="item in cart"
-            :key="item.product.id"
-            class="rounded-lg border p-3"
-          >
-            <div class="flex gap-3">
-              <div class="min-w-0 flex-1">
-                <p class="font-medium text-gray-900">
-                  {{ item.product.name }}
-                </p>
-
-                <p class="mt-1 text-xs text-gray-500">
-                  {{ formatCurrency(item.product.selling_price) }}
-                  /
-                  {{ item.product.unit }}
-                </p>
-              </div>
+            <div
+              v-else
+              class="flex items-center gap-1"
+              role="group"
+              aria-label="Konfirmasi kosongkan keranjang"
+            >
+              <span class="hidden text-[13px] text-[#46514B] sm:inline">
+                Hapus semua item?
+              </span>
 
               <button
                 type="button"
-                class="min-h-11 rounded-lg px-2 text-sm text-red-600 hover:bg-red-50"
-                :aria-label="`Hapus ${item.product.name}`"
-                @click="removeFromCart(item.product.id)"
+                class="focus-ring min-h-11 rounded-lg bg-[#C0392B] px-3 text-sm font-semibold text-white hover:bg-[#A93226]"
+                @click="clearCart"
               >
-                Hapus
+                Ya, kosongkan
+              </button>
+
+              <button
+                type="button"
+                class="focus-ring min-h-11 rounded-lg px-3 text-sm font-medium text-[#46514B] hover:bg-[#F1F4F2]"
+                @click="confirmingClear = false"
+              >
+                Batal
               </button>
             </div>
-
-            <div
-              class="mt-3 flex items-center justify-between gap-3"
-            >
-              <div
-                class="flex items-center rounded-lg border"
-              >
-                <button
-                  type="button"
-                  class="min-h-11 min-w-11 text-lg hover:bg-gray-50"
-                  :aria-label="`Kurangi ${item.product.name}`"
-                  @click="decreaseQuantity(item)"
-                >
-                  −
-                </button>
-
-                <span
-                  class="min-w-10 text-center text-sm font-semibold"
-                >
-                  {{ item.quantity }}
-                </span>
-
-                <button
-                  type="button"
-                  class="min-h-11 min-w-11 text-lg hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
-                  :aria-label="`Tambah ${item.product.name}`"
-                  :disabled="
-                    item.quantity >= item.product.stock
-                  "
-                  @click="increaseQuantity(item)"
-                >
-                  +
-                </button>
-              </div>
-
-              <p class="font-semibold text-gray-900">
-                {{
-                  formatCurrency(
-                    item.product.selling_price *
-                      item.quantity,
-                  )
-                }}
-              </p>
-            </div>
-
-            <p class="mt-2 text-xs text-gray-500">
-              Stok tersedia:
-              {{ formatStock(item.product) }}
-            </p>
-          </article>
+          </div>
         </div>
 
-        <!-- Member -->
-        <div class="mt-4 border-t pt-4">
+        <!-- Isi keranjang + anggota (area scroll) -->
+        <div class="min-h-0 flex-1 overflow-y-auto">
           <div
-            class="flex items-center justify-between gap-3"
+            v-if="cart.length === 0"
+            class="px-6 py-10 text-center"
           >
-            <div>
-              <h3 class="font-medium text-gray-900">
-                Anggota
-              </h3>
+            <p class="font-semibold">
+              Keranjang masih kosong
+            </p>
+            <p class="mx-auto mt-1 max-w-xs text-sm text-[#46514B]">
+              Cari atau scan produk untuk memulai transaksi. Produk yang
+              ditambahkan akan muncul di sini.
+            </p>
+          </div>
 
-              <p
-                v-if="selectedMember"
-                class="mt-1 text-sm text-gray-500"
-              >
-                {{ selectedMember.memberNumber }}
-                ·
-                {{ selectedMember.name }}
-              </p>
-
-              <p
-                v-else
-                class="mt-1 text-sm text-gray-500"
-              >
-                Opsional
-              </p>
-            </div>
-
-            <button
-              type="button"
-              class="min-h-11 rounded-lg border px-3 text-sm font-medium hover:bg-gray-50"
-              @click="
-                showMemberPicker = !showMemberPicker
+          <ul
+            v-else
+            class="divide-y divide-[#E6EBE8]"
+          >
+            <li
+              v-for="item in cart"
+              :key="item.product.id"
+              class="px-4 py-3 transition-colors"
+              :class="
+                highlightedProductId === item.product.id
+                  ? 'bg-[#F0F8F5]'
+                  : ''
               "
             >
-              {{
-                selectedMember
-                  ? 'Ganti'
-                  : 'Pilih anggota'
-              }}
-            </button>
-          </div>
+              <div class="flex items-start justify-between gap-3">
+                <div class="min-w-0">
+                  <p class="text-sm font-semibold leading-5">
+                    {{ item.product.name }}
+                  </p>
 
-          <button
-            v-if="selectedMember"
-            type="button"
-            class="mt-2 text-sm text-red-600"
-            @click="removeMember"
-          >
-            Hapus anggota
-          </button>
+                  <p class="text-[13px] tabular-nums text-[#6B756F]">
+                    {{ formatCurrency(item.product.selling_price) }}
+                    / {{ item.product.unit }}
+                  </p>
+                </div>
 
-          <div
-            v-if="showMemberPicker"
-            class="mt-3 rounded-lg border bg-gray-50 p-3"
-          >
-            <input
-              v-model="memberSearch"
-              type="search"
-              placeholder="Cari nomor, nama, atau telepon..."
-              class="min-h-11 w-full rounded-lg border bg-white px-3 text-base outline-none focus:border-gray-500 focus:ring-2 focus:ring-gray-200"
-              @input="handleMemberSearch"
-            />
+                <button
+                  type="button"
+                  class="focus-ring min-h-11 rounded-lg px-2 text-[13px] font-medium text-[#C0392B] hover:bg-[#FBEDEB]"
+                  :aria-label="`Hapus ${item.product.name} dari keranjang`"
+                  @click="removeFromCart(item.product.id)"
+                >
+                  Hapus
+                </button>
+              </div>
 
-            <p
-              v-if="memberError"
-              class="mt-2 text-sm text-red-600"
-              role="alert"
-            >
-              {{ memberError }}
-            </p>
+              <div class="mt-1 flex items-center justify-between gap-3">
+                <div
+                  class="flex items-center rounded-lg border border-[#D6DDD9]"
+                  role="group"
+                  :aria-label="`Jumlah ${item.product.name}`"
+                >
+                  <button
+                    type="button"
+                    class="focus-ring min-h-11 min-w-11 rounded-l-lg text-lg text-[#17201C] hover:bg-[#F1F4F2]"
+                    :aria-label="`Kurangi ${item.product.name}`"
+                    @click="decreaseQuantity(item)"
+                  >
+                    −
+                  </button>
 
-            <div
-              v-if="loadingMembers"
-              class="mt-3 text-sm text-gray-500"
-            >
-              Mencari anggota...
-            </div>
+                  <span
+                    class="min-w-10 text-center text-sm font-semibold tabular-nums"
+                    aria-live="polite"
+                  >
+                    {{ item.quantity }}
+                  </span>
 
-            <div
-              v-else-if="members.length"
-              class="mt-3 space-y-2"
-            >
-              <button
-                v-for="member in members"
-                :key="member.id"
-                type="button"
-                class="min-h-11 w-full rounded-lg border bg-white p-3 text-left hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
-                :disabled="member.status !== 'ACTIVE'"
-                @click="selectMember(member)"
+                  <button
+                    type="button"
+                    class="focus-ring min-h-11 min-w-11 rounded-r-lg text-lg text-[#17201C] hover:bg-[#F1F4F2] disabled:cursor-not-allowed disabled:opacity-40"
+                    :aria-label="`Tambah ${item.product.name}`"
+                    :disabled="item.quantity >= item.product.stock"
+                    @click="increaseQuantity(item)"
+                  >
+                    +
+                  </button>
+                </div>
+
+                <p class="text-right text-base font-semibold tabular-nums">
+                  {{ formatCurrency(item.product.selling_price * item.quantity) }}
+                </p>
+              </div>
+
+              <p
+                class="mt-1.5 text-xs tabular-nums"
+                :class="
+                  item.quantity >= item.product.stock
+                    ? 'font-medium text-[#7A4F0F]'
+                    : 'text-[#6B756F]'
+                "
               >
-                <p class="font-medium">
-                  {{ member.name }}
+                <template v-if="item.quantity >= item.product.stock">
+                  Stok maksimal tercapai ({{ formatStock(item.product) }})
+                </template>
+                <template v-else>
+                  Stok tersedia: {{ formatStock(item.product) }}
+                </template>
+              </p>
+            </li>
+          </ul>
+
+          <!-- Anggota -->
+          <div class="border-t border-[#E6EBE8] px-4 py-4">
+            <div class="flex items-center justify-between gap-3">
+              <div class="min-w-0">
+                <h3 class="text-sm font-semibold">
+                  Anggota
+                  <span class="font-normal text-[#6B756F]">(opsional)</span>
+                </h3>
+
+                <p
+                  v-if="selectedMember"
+                  class="mt-0.5 truncate text-[13px] text-[#46514B]"
+                >
+                  <span class="font-medium text-[#17201C]">{{ selectedMember.name }}</span>
+                  <span class="tabular-nums"> — {{ selectedMember.memberNumber }}</span>
                 </p>
 
-                <p class="text-xs text-gray-500">
-                  {{ member.memberNumber }}
-                  ·
-                  {{ member.phone }}
+                <p
+                  v-else
+                  class="mt-0.5 text-[13px] text-[#6B756F]"
+                >
+                  Belum dipilih
                 </p>
-              </button>
+              </div>
+
+              <div class="flex shrink-0 items-center gap-1">
+                <button
+                  v-if="selectedMember"
+                  type="button"
+                  class="focus-ring min-h-11 rounded-lg px-3 text-[13px] font-medium text-[#C0392B] hover:bg-[#FBEDEB]"
+                  @click="removeMember"
+                >
+                  Hapus
+                </button>
+
+                <button
+                  type="button"
+                  class="focus-ring min-h-11 rounded-lg border border-[#D6DDD9] bg-white px-3 text-[13px] font-medium hover:bg-[#F1F4F2]"
+                  :aria-expanded="showMemberPicker"
+                  aria-controls="member-picker"
+                  @click="showMemberPicker = !showMemberPicker"
+                >
+                  {{ selectedMember ? 'Ganti' : 'Pilih anggota' }}
+                </button>
+              </div>
             </div>
 
-            <p
-              v-else-if="memberSearch.trim()"
-              class="mt-3 text-sm text-gray-500"
+            <div
+              v-if="showMemberPicker"
+              id="member-picker"
+              class="mt-3 rounded-lg border border-[#E6EBE8] bg-[#F8FAF9] p-3"
             >
-              Anggota tidak ditemukan.
-            </p>
-          </div>
-        </div>
-
-        <!-- Total -->
-        <div class="mt-4 border-t pt-4">
-          <div
-            class="flex items-center justify-between gap-3"
-          >
-            <span class="text-sm text-gray-500">
-              Total
-            </span>
-
-            <span
-              class="text-2xl font-bold text-gray-900"
-            >
-              {{ formatCurrency(cartTotal) }}
-            </span>
-          </div>
-        </div>
-
-        <!-- Payment -->
-        <div
-          v-if="cart.length > 0 && !saleSuccess"
-          class="mt-5 border-t pt-5"
-        >
-          <div>
-            <h3 class="text-base font-semibold text-gray-900">
-              Pembayaran
-            </h3>
-
-            <p class="mt-1 text-sm text-gray-500">
-              Masukkan metode dan nominal pembayaran.
-            </p>
-          </div>
-
-          <div class="mt-4 space-y-4">
-            <div>
               <label
-                for="payment-method"
-                class="mb-1 block text-sm font-medium text-gray-700"
+                for="member-search"
+                class="mb-1.5 block text-xs font-medium text-[#46514B]"
               >
-                Metode pembayaran
-              </label>
-
-              <select
-                id="payment-method"
-                v-model="paymentMethod"
-                class="min-h-11 w-full rounded-lg border bg-white px-3 text-base outline-none focus:border-gray-500 focus:ring-2 focus:ring-gray-200"
-              >
-                <option value="CASH">
-                  Tunai
-                </option>
-
-                <option value="BANK_TRANSFER">
-                  Transfer Bank
-                </option>
-
-                <option value="DEBIT">
-                  Debit
-                </option>
-
-                <option value="OTHER">
-                  Lainnya
-                </option>
-              </select>
-            </div>
-
-            <div>
-              <label
-                for="paid-amount"
-                class="mb-1 block text-sm font-medium text-gray-700"
-              >
-                Nominal pembayaran
+                Cari anggota
               </label>
 
               <input
+                id="member-search"
+                v-model="memberSearch"
+                type="search"
+                autocomplete="off"
+                placeholder="Nomor anggota, nama, atau telepon"
+                class="focus-ring min-h-11 w-full rounded-lg border border-[#D6DDD9] bg-white px-3 text-base placeholder:text-[#6B756F] outline-none focus:border-[#176B4D]"
+                @input="handleMemberSearch"
+              />
+
+              <p
+                v-if="memberError"
+                role="alert"
+                class="mt-2 text-sm text-[#8E2A20]"
+              >
+                {{ memberError }}
+              </p>
+
+              <p
+                v-if="loadingMembers"
+                class="mt-3 text-sm text-[#46514B]"
+                role="status"
+              >
+                Mencari anggota...
+              </p>
+
+              <ul
+                v-else-if="members.length"
+                class="mt-3 space-y-2"
+              >
+                <li
+                  v-for="member in members"
+                  :key="member.id"
+                >
+                  <button
+                    type="button"
+                    class="focus-ring flex min-h-11 w-full items-center justify-between gap-3 rounded-lg border border-[#D6DDD9] bg-white p-3 text-left hover:bg-[#F0F8F5] disabled:cursor-not-allowed disabled:bg-[#F1F4F2] disabled:opacity-70"
+                    :disabled="member.status !== 'ACTIVE'"
+                    @click="selectMember(member)"
+                  >
+                    <span class="min-w-0">
+                      <span class="block truncate text-sm font-medium">
+                        {{ member.name }}
+                      </span>
+                      <span class="block text-xs tabular-nums text-[#6B756F]">
+                        {{ member.memberNumber }} — {{ member.phone }}
+                      </span>
+                    </span>
+
+                    <span
+                      v-if="member.status !== 'ACTIVE'"
+                      class="shrink-0 rounded-full border border-[#D6DDD9] bg-[#F1F4F2] px-2 py-0.5 text-xs font-medium text-[#46514B]"
+                    >
+                      Nonaktif
+                    </span>
+                  </button>
+                </li>
+              </ul>
+
+              <p
+                v-else-if="memberSearch.trim()"
+                class="mt-3 text-sm text-[#46514B]"
+              >
+                Anggota tidak ditemukan. Periksa nomor atau ejaan nama.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Total + aksi utama -->
+        <div class="border-t-2 border-[#176B4D]/30 bg-[#F0F8F5] px-4 py-4">
+          <div class="flex items-end justify-between gap-3">
+            <span class="text-sm font-medium text-[#46514B]">
+              Total
+            </span>
+
+            <span class="text-[28px] font-bold leading-[34px] tabular-nums text-[#12372A]">
+              {{ formatCurrency(cartTotal) }}
+            </span>
+          </div>
+
+          <button
+            type="button"
+            class="focus-ring mt-3 min-h-14 w-full rounded-lg bg-[#176B4D] px-4 py-3 text-base font-semibold text-white transition-colors hover:bg-[#1F805D] disabled:cursor-not-allowed disabled:bg-[#9AA8A1]"
+            :disabled="cart.length === 0"
+            @click="openPayment"
+          >
+            Bayar
+          </button>
+
+          <p
+            v-if="cart.length === 0"
+            class="mt-2 text-center text-xs text-[#6B756F]"
+          >
+            Tambahkan produk untuk melanjutkan ke pembayaran.
+          </p>
+        </div>
+      </section>
+    </div>
+
+    <!-- Bar bawah (mobile): Total & Payment paling utama -->
+    <div
+      class="fixed inset-x-0 bottom-0 z-30 flex items-center gap-3 border-t border-[#D6DDD9] bg-white px-4 py-3 shadow-[0_-4px_12px_rgba(18,55,42,.08)] lg:hidden"
+    >
+      <button
+        type="button"
+        class="focus-ring min-h-11 min-w-0 flex-1 rounded-lg text-left"
+        :aria-label="`Lihat keranjang, ${cartItemCount} item, total ${formatCurrency(cartTotal)}`"
+        @click="scrollToCart"
+      >
+        <span class="block text-xs text-[#46514B] tabular-nums">
+          {{ cartItemCount }} item
+        </span>
+        <span class="block truncate text-lg font-bold leading-6 tabular-nums text-[#12372A]">
+          {{ formatCurrency(cartTotal) }}
+        </span>
+      </button>
+
+      <button
+        type="button"
+        class="focus-ring min-h-12 rounded-lg bg-[#176B4D] px-6 text-base font-semibold text-white hover:bg-[#1F805D] disabled:cursor-not-allowed disabled:bg-[#9AA8A1]"
+        :disabled="cart.length === 0"
+        @click="openPayment"
+      >
+        Bayar
+      </button>
+    </div>
+
+    <!-- Payment modal -->
+    <div
+      v-if="paymentOpen"
+      class="fixed inset-0 z-50 flex items-end justify-center bg-[#17201C]/50 sm:items-center sm:p-4"
+      @click.self="closePayment"
+    >
+      <div
+        ref="dialogRef"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="payment-dialog-title"
+        class="max-h-[95vh] w-full max-w-md overflow-y-auto rounded-t-xl bg-white p-6 shadow-[0_12px_32px_rgba(18,55,42,.12)] sm:rounded-xl"
+        @keydown="onDialogKeydown"
+      >
+        <!-- Sukses -->
+        <template v-if="saleSuccess">
+          <div
+            role="status"
+            aria-live="polite"
+          >
+            <div class="flex items-start gap-3">
+              <div
+                class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#DCEFE7] text-[#16834B]"
+                aria-hidden="true"
+              >
+                <svg class="h-5 w-5" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="m4.5 10.5 3.5 3.5 7.5-8" />
+                </svg>
+              </div>
+
+              <div>
+                <h2
+                  id="payment-dialog-title"
+                  class="text-lg font-semibold leading-[26px]"
+                >
+                  Transaksi berhasil
+                </h2>
+
+                <p class="text-sm text-[#46514B]">
+                  Transaksi
+                  <strong class="tabular-nums text-[#17201C]">{{ saleSuccess.saleNumber }}</strong>
+                  tersimpan. Stok berkurang
+                  <strong class="tabular-nums text-[#17201C]">{{ soldUnits }}</strong>
+                  unit dari
+                  <strong class="tabular-nums text-[#17201C]">{{ saleSuccess.items.length }}</strong>
+                  produk.
+                </p>
+              </div>
+            </div>
+
+            <dl class="mt-5 space-y-2 rounded-lg border border-[#E6EBE8] bg-[#F8FAF9] p-4 text-sm">
+              <div class="flex justify-between gap-4">
+                <dt class="text-[#46514B]">Total</dt>
+                <dd class="font-semibold tabular-nums">{{ formatCurrency(saleSuccess.total) }}</dd>
+              </div>
+              <div class="flex justify-between gap-4">
+                <dt class="text-[#46514B]">Metode</dt>
+                <dd>{{ paymentLabel(saleSuccess.paymentMethod) }}</dd>
+              </div>
+              <div class="flex justify-between gap-4">
+                <dt class="text-[#46514B]">Dibayar</dt>
+                <dd class="tabular-nums">{{ formatCurrency(saleSuccess.paidAmount) }}</dd>
+              </div>
+              <div class="flex justify-between gap-4 border-t border-[#E6EBE8] pt-2 text-base">
+                <dt class="font-medium">Kembalian</dt>
+                <dd class="font-bold tabular-nums text-[#12372A]">{{ formatCurrency(saleSuccess.changeAmount) }}</dd>
+              </div>
+            </dl>
+          </div>
+
+          <div class="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <button
+              type="button"
+              class="focus-ring min-h-12 rounded-lg border border-[#D6DDD9] bg-white px-4 text-sm font-semibold hover:bg-[#F1F4F2]"
+              @click="printReceipt"
+            >
+              Cetak struk
+            </button>
+
+            <button
+              ref="newSaleButtonRef"
+              type="button"
+              class="focus-ring min-h-12 rounded-lg bg-[#176B4D] px-5 text-sm font-semibold text-white hover:bg-[#1F805D]"
+              @click="startNewSale"
+            >
+              Transaksi baru
+            </button>
+          </div>
+        </template>
+
+        <!-- Pembayaran -->
+        <template v-else>
+          <h2
+            id="payment-dialog-title"
+            class="text-lg font-semibold leading-[26px]"
+          >
+            Pembayaran
+          </h2>
+
+          <p class="mt-1 text-sm text-[#46514B]">
+            {{ cartItemCount }} item
+            <template v-if="selectedMember">
+              untuk anggota
+              <span class="font-medium text-[#17201C]">{{ selectedMember.name }}</span>
+            </template>
+          </p>
+
+          <div class="mt-4 rounded-lg bg-[#F0F8F5] p-4">
+            <p class="text-xs font-medium text-[#46514B]">
+              Total transaksi
+            </p>
+            <p class="text-[28px] font-bold leading-[34px] tabular-nums text-[#12372A]">
+              {{ formatCurrency(cartTotal) }}
+            </p>
+          </div>
+
+          <!-- PaymentMethodSelector -->
+          <fieldset class="mt-5">
+            <legend class="mb-2 text-xs font-medium text-[#46514B]">
+              Metode pembayaran
+            </legend>
+
+            <div class="grid grid-cols-2 gap-2">
+              <div
+                v-for="option in paymentOptions"
+                :key="option.value"
+                class="relative"
+              >
+                <input
+                  :id="`pay-${option.value}`"
+                  class="peer sr-only"
+                  type="radio"
+                  name="payment-method"
+                  :value="option.value"
+                  :checked="paymentMethod === option.value"
+                  @change="selectPaymentMethod(option.value)"
+                />
+
+                <label
+                  :for="`pay-${option.value}`"
+                  class="flex min-h-11 cursor-pointer items-center justify-center rounded-lg border px-3 text-sm font-medium transition-colors peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[#176B4D]"
+                  :class="
+                    paymentMethod === option.value
+                      ? 'border-[#176B4D] bg-[#DCEFE7] text-[#12372A]'
+                      : 'border-[#D6DDD9] bg-white text-[#46514B] hover:bg-[#F1F4F2]'
+                  "
+                >
+                  {{ option.label }}
+                </label>
+              </div>
+            </div>
+          </fieldset>
+
+          <!-- MoneyInput -->
+          <div class="mt-5">
+            <label
+              for="paid-amount"
+              class="mb-1.5 block text-xs font-medium text-[#46514B]"
+            >
+              Nominal dibayar
+            </label>
+
+            <div class="relative">
+              <span
+                class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-base text-[#6B756F]"
+                aria-hidden="true"
+              >
+                Rp
+              </span>
+
+              <input
                 id="paid-amount"
-                v-model.number="paidAmount"
-                type="number"
-                min="0"
-                step="100"
+                ref="amountRef"
+                type="text"
                 inputmode="numeric"
-                class="min-h-11 w-full rounded-lg border px-3 text-base outline-none focus:border-gray-500 focus:ring-2 focus:ring-gray-200"
-                placeholder="Masukkan nominal pembayaran"
+                autocomplete="off"
+                :value="paidAmountText"
+                placeholder="0"
+                class="focus-ring min-h-12 w-full rounded-lg border border-[#D6DDD9] bg-white pl-10 pr-3 text-right text-lg font-semibold tabular-nums outline-none focus:border-[#176B4D]"
+                :aria-invalid="paymentShortfall > 0 && paidAmount > 0"
+                aria-describedby="payment-summary"
                 @input="handlePaidAmountInput"
                 @keydown.enter.prevent="submitSale"
               />
             </div>
 
             <div
-              class="rounded-lg bg-gray-50 p-4"
-              aria-live="polite"
+              v-if="paymentMethod === 'CASH'"
+              class="mt-2 flex flex-wrap gap-2"
             >
-              <div
-                class="flex items-center justify-between gap-3 text-sm"
+              <button
+                v-for="amount in quickAmounts"
+                :key="amount"
+                type="button"
+                class="focus-ring min-h-11 rounded-lg border border-[#D6DDD9] bg-white px-3 text-[13px] font-medium tabular-nums hover:bg-[#F1F4F2]"
+                @click="paidAmount = amount"
               >
-                <span class="text-gray-500">
-                  Total
-                </span>
+                {{ amount === cartTotal ? 'Uang pas' : formatCurrency(amount) }}
+              </button>
+            </div>
+          </div>
 
-                <span class="font-semibold text-gray-900">
-                  {{ formatCurrency(cartTotal) }}
-                </span>
-              </div>
-
-              <div
-                class="mt-2 flex items-center justify-between gap-3 text-sm"
-              >
-                <span class="text-gray-500">
-                  Dibayar
-                </span>
-
-                <span class="font-semibold text-gray-900">
-                  {{ formatCurrency(paidAmount) }}
-                </span>
-              </div>
-
-              <div
-                v-if="paymentShortfall > 0"
-                class="mt-3 flex items-center justify-between gap-3 text-sm font-semibold text-red-600"
-              >
-                <span>
-                  Kurang
-                </span>
-
-                <span>
-                  {{ formatCurrency(paymentShortfall) }}
-                </span>
-              </div>
-
-              <div
-                v-else
-                class="mt-3 flex items-center justify-between gap-3 text-sm font-semibold text-green-700"
-              >
-                <span>
-                  Kembalian
-                </span>
-
-                <span>
-                  {{ formatCurrency(changeAmount) }}
-                </span>
-              </div>
+          <!-- Ringkasan: Total / Bayar / Kembalian -->
+          <dl
+            id="payment-summary"
+            class="mt-5 space-y-2 rounded-lg border border-[#E6EBE8] bg-[#F8FAF9] p-4 text-sm"
+            aria-live="polite"
+          >
+            <div class="flex justify-between gap-4">
+              <dt class="text-[#46514B]">Total</dt>
+              <dd class="font-semibold tabular-nums">{{ formatCurrency(cartTotal) }}</dd>
             </div>
 
-            <p
-              v-if="checkoutError"
-              class="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700"
-              role="alert"
+            <div class="flex justify-between gap-4">
+              <dt class="text-[#46514B]">Bayar</dt>
+              <dd class="font-semibold tabular-nums">{{ formatCurrency(paidAmount) }}</dd>
+            </div>
+
+            <div
+              v-if="paymentShortfall > 0"
+              class="flex justify-between gap-4 border-t border-[#E6EBE8] pt-2 text-base font-semibold text-[#8E2A20]"
             >
-              {{ checkoutError }}
-            </p>
+              <dt>Kurang</dt>
+              <dd class="tabular-nums">{{ formatCurrency(paymentShortfall) }}</dd>
+            </div>
+
+            <div
+              v-else
+              class="flex justify-between gap-4 border-t border-[#E6EBE8] pt-2 text-base font-semibold text-[#12372A]"
+            >
+              <dt>Kembalian</dt>
+              <dd class="tabular-nums">{{ formatCurrency(changeAmount) }}</dd>
+            </div>
+          </dl>
+
+          <p
+            v-if="checkoutError"
+            role="alert"
+            class="mt-4 rounded-lg border border-[#C0392B]/30 bg-[#FBEDEB] px-3 py-2 text-sm text-[#8E2A20]"
+          >
+            {{ checkoutError }}
+          </p>
+
+          <p
+            v-if="!isOnline"
+            role="alert"
+            class="mt-4 rounded-lg border border-[#C0392B]/30 bg-[#FBEDEB] px-3 py-2 text-sm text-[#8E2A20]"
+          >
+            Koneksi terputus. Jangan tutup halaman. Periksa koneksi
+            sebelum mengulangi transaksi.
+          </p>
+
+          <p class="mt-4 text-[13px] text-[#46514B]">
+            Setelah diselesaikan, stok berkurang
+            <span class="font-medium tabular-nums text-[#17201C]">{{ cartItemCount }}</span>
+            unit dan transaksi tidak dapat diubah.
+          </p>
+
+          <div class="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <button
+              type="button"
+              class="focus-ring min-h-12 rounded-lg border border-[#D6DDD9] bg-white px-4 text-sm font-semibold hover:bg-[#F1F4F2] disabled:cursor-not-allowed disabled:opacity-50"
+              :disabled="submittingSale"
+              @click="closePayment"
+            >
+              Kembali ke keranjang
+            </button>
 
             <button
               type="button"
-              class="min-h-12 w-full rounded-lg bg-gray-900 px-4 py-3 text-sm font-semibold text-white hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
-              :disabled="
-                !paymentValid || submittingSale
-              "
+              class="focus-ring min-h-12 rounded-lg bg-[#176B4D] px-5 text-sm font-semibold text-white hover:bg-[#1F805D] disabled:cursor-not-allowed disabled:bg-[#9AA8A1]"
+              :disabled="!canSubmit"
               @click="submitSale"
             >
-              {{
-                submittingSale
-                  ? 'Memproses transaksi...'
-                  : 'Bayar & Simpan Transaksi'
-              }}
+              {{ submittingSale ? 'Memproses transaksi...' : 'Selesaikan Transaksi' }}
             </button>
           </div>
+        </template>
+      </div>
+    </div>
+
+    <!-- Struk: hanya tampil saat dicetak -->
+    <div
+      v-if="saleSuccess"
+      id="print-receipt"
+      class="receipt-print hidden w-full max-w-sm bg-white p-5 text-sm text-slate-900"
+    >
+      <div class="text-center">
+        <h2 class="text-lg font-bold">
+          Koperasi Romantis
+        </h2>
+
+        <p class="mt-1 text-xs text-slate-500">
+          Struk Penjualan
+        </p>
+      </div>
+
+      <div class="my-4 border-t border-dashed border-slate-300"></div>
+
+      <div class="space-y-1 text-xs">
+        <div class="flex justify-between gap-4">
+          <span>Transaksi</span>
+          <span class="font-medium">{{ saleSuccess.saleNumber }}</span>
         </div>
 
-        <!-- Success -->
-        <div
-          v-if="saleSuccess"
-          class="mt-5 rounded-xl border border-green-200 bg-green-50 p-4"
-          role="status"
-          aria-live="polite"
-        >
-          <div class="flex items-start gap-3">
-            <div
-              class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-green-100 font-bold text-green-700"
-              aria-hidden="true"
-            >
-              ✓
-            </div>
-
-            <div class="min-w-0">
-              <h3 class="font-semibold text-green-900">
-                Transaksi berhasil
-              </h3>
-
-              <p class="mt-1 text-sm text-green-800">
-                Nomor transaksi:
-                <strong>
-                  {{ saleSuccess.saleNumber }}
-                </strong>
-              </p>
-
-              <p class="mt-1 text-sm text-green-800">
-                Total:
-                <strong>
-                  {{ formatCurrency(saleSuccess.total) }}
-                </strong>
-              </p>
-
-              <p class="mt-1 text-sm text-green-800">
-                Kembalian:
-                <strong>
-                  {{ formatCurrency(saleSuccess.changeAmount) }}
-                </strong>
-              </p>
-            </div>
-          </div>
-
-          <div class="mt-4 flex flex-col gap-3 sm:flex-row">
-            <button
-              type="button"
-              class="min-h-11 flex-1 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-emerald-700"
-              @click="printReceipt"
-            >
-              Cetak Struk
-            </button>
-
-            <button
-              type="button"
-              class="min-h-11 flex-1 rounded-lg border border-green-300 bg-white px-4 py-2 text-sm font-semibold text-green-800 transition hover:bg-green-100"
-              @click="startNewSale"
-            >
-              Transaksi Baru
-            </button>
-          </div>
+        <div class="flex justify-between gap-4">
+          <span>Tanggal</span>
+          <span class="text-right">
+            {{ new Date(saleSuccess.createdAt).toLocaleString('id-ID') }}
+          </span>
         </div>
+      </div>
 
+      <div class="my-4 border-t border-dashed border-slate-300"></div>
+
+      <div class="space-y-3">
         <div
-          v-if="saleSuccess"
-          id="print-receipt"
-          class="receipt-print mx-auto mt-6 w-full max-w-sm rounded-xl border border-slate-200 bg-white p-5 text-sm text-slate-900"
+          v-for="item in saleSuccess.items"
+          :key="`${item.productId}-${item.sku}`"
         >
-          <div class="text-center">
-            <h2 class="text-lg font-bold">
-              Koperasi Romantis
-            </h2>
-
-            <p class="mt-1 text-xs text-slate-500">
-              Struk Penjualan
-            </p>
+          <div class="font-medium">
+            {{ item.name }}
           </div>
 
-          <div class="my-4 border-t border-dashed border-slate-300"></div>
-
-          <div class="space-y-1 text-xs">
-            <div class="flex justify-between gap-4">
-              <span>Transaksi</span>
-              <span class="font-medium">
-                {{ saleSuccess.saleNumber }}
-              </span>
-            </div>
-
-            <div class="flex justify-between gap-4">
-              <span>Tanggal</span>
-              <span class="text-right">
-                {{ new Date(saleSuccess.createdAt).toLocaleString('id-ID') }}
-              </span>
-            </div>
-          </div>
-
-          <div class="my-4 border-t border-dashed border-slate-300"></div>
-
-          <div class="space-y-3">
-            <div
-              v-for="item in saleSuccess.items"
-              :key="`${item.productId}-${item.sku}`"
-            >
-              <div class="font-medium">
-                {{ item.name }}
-              </div>
-
-              <div class="mt-1 flex justify-between gap-4 text-xs text-slate-600">
-                <span>
-                  {{ item.quantity }}
-                  {{ item.unit }}
-                  ×
-                  {{ formatCurrency(item.unitPrice) }}
-                </span>
-
-                <span class="font-medium text-slate-900">
-                  {{ formatCurrency(item.subtotal) }}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <div class="my-4 border-t border-dashed border-slate-300"></div>
-
-          <div class="space-y-2">
-            <div class="flex justify-between">
-              <span>Subtotal</span>
-              <span>
-                {{ formatCurrency(saleSuccess.subtotal) }}
-              </span>
-            </div>
-
-            <div class="flex justify-between font-bold">
-              <span>Total</span>
-              <span>
-                {{ formatCurrency(saleSuccess.total) }}
-              </span>
-            </div>
-
-            <div class="flex justify-between">
-              <span>Pembayaran</span>
-              <span>
-                {{ saleSuccess.paymentMethod }}
-              </span>
-            </div>
-
-            <div class="flex justify-between">
-              <span>Dibayar</span>
-              <span>
-                {{ formatCurrency(saleSuccess.paidAmount) }}
-              </span>
-            </div>
-
-            <div class="flex justify-between font-semibold">
-              <span>Kembalian</span>
-              <span>
-                {{ formatCurrency(saleSuccess.changeAmount) }}
-              </span>
-            </div>
-          </div>
-
-          <div
-            v-if="saleSuccess.memberId"
-            class="mt-4 border-t border-dashed border-slate-300 pt-3 text-xs"
-          >
-            <span class="text-slate-500">
-              Member:
+          <div class="mt-1 flex justify-between gap-4 text-xs text-slate-600">
+            <span>
+              {{ item.quantity }} {{ item.unit }} ×
+              {{ formatCurrency(item.unitPrice) }}
             </span>
-            {{ saleSuccess.memberId }}
-          </div>
 
-          <div class="mt-6 text-center text-xs text-slate-500">
-            Terima kasih telah berbelanja.
+            <span class="font-medium text-slate-900">
+              {{ formatCurrency(item.subtotal) }}
+            </span>
           </div>
         </div>
-      </section>
+      </div>
+
+      <div class="my-4 border-t border-dashed border-slate-300"></div>
+
+      <div class="space-y-2">
+        <div class="flex justify-between">
+          <span>Subtotal</span>
+          <span>{{ formatCurrency(saleSuccess.subtotal) }}</span>
+        </div>
+
+        <div class="flex justify-between font-bold">
+          <span>Total</span>
+          <span>{{ formatCurrency(saleSuccess.total) }}</span>
+        </div>
+
+        <div class="flex justify-between">
+          <span>Pembayaran</span>
+          <span>{{ paymentLabel(saleSuccess.paymentMethod) }}</span>
+        </div>
+
+        <div class="flex justify-between">
+          <span>Dibayar</span>
+          <span>{{ formatCurrency(saleSuccess.paidAmount) }}</span>
+        </div>
+
+        <div class="flex justify-between font-semibold">
+          <span>Kembalian</span>
+          <span>{{ formatCurrency(saleSuccess.changeAmount) }}</span>
+        </div>
+      </div>
+
+      <div
+        v-if="saleSuccess.memberId"
+        class="mt-4 border-t border-dashed border-slate-300 pt-3 text-xs"
+      >
+        <span class="text-slate-500">Member:</span>
+        {{ saleSuccess.memberId }}
+      </div>
+
+      <div class="mt-6 text-center text-xs text-slate-500">
+        Terima kasih telah berbelanja.
+      </div>
     </div>
   </div>
 </template>
 
 <style scoped>
+/* Focus ring standar (DESIGN.md §13.2): 2px solid #176B4D, offset 2px */
+.focus-ring:focus-visible {
+  outline: 2px solid #176b4d;
+  outline-offset: 2px;
+}
+
 @media print {
   :global(body) {
     margin: 0 !important;
@@ -1227,13 +1804,13 @@ onMounted(async () => {
     visibility: hidden !important;
   }
 
-  /* Tampilkan receipt dan seluruh isinya */
+  /* Tampilkan struk dan seluruh isinya */
   #print-receipt,
   #print-receipt * {
     visibility: visible !important;
   }
 
-  /* Lepaskan receipt dari layout POS */
+  /* Lepaskan struk dari layout POS */
   #print-receipt {
     position: absolute !important;
     left: 0 !important;
@@ -1257,7 +1834,7 @@ onMounted(async () => {
     overflow: visible !important;
   }
 
-  /* Pertahankan layout horizontal pada baris receipt */
+  /* Pertahankan layout horizontal pada baris struk */
   #print-receipt .flex {
     display: flex !important;
   }
