@@ -26,9 +26,10 @@ async function getErrorMessage(
 
 export async function getDashboardAnalytics(
   accessToken: string,
+  days: 7 | 30 = 7,
 ): Promise<DashboardAnalytics> {
   const response = await fetch(
-    '/api/reports/dashboard',
+    `/api/reports/dashboard?days=${days}`,
     {
       headers: {
         Authorization: `Bearer ${accessToken}`,

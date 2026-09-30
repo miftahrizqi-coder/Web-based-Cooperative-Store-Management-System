@@ -32,11 +32,10 @@ const stockAlerts = ref<StockAlert[]>([])
 const stockAlertLoading = ref(true)
 const stockAlertError = ref('')
 
-/**
- * Dashboard KPI mengikuti DESIGN.md §7.2.
- * Nilai tetap "—" sampai endpoint KPI tersedia.
- */
 const dashboardAnalytics = ref<DashboardAnalytics | null>(null)
+const selectedPeriod = ref<7 | 30>(7)
+const analyticsLoading = ref(false)
+const analyticsError = ref('')
 
 const kpis = computed(() => {
   const analytics = dashboardAnalytics.value
@@ -119,6 +118,32 @@ const kpis = computed(() => {
   ]
 })
 
+const salesAnalytics = computed(
+  () => dashboardAnalytics.value?.sales_analytics ?? [],
+)
+
+const maxSales = computed(() => {
+  const values = salesAnalytics.value.map(
+    (item) => item.sales,
+  )
+
+  return Math.max(...values, 0)
+})
+
+const maxTransactions = computed(() => {
+  const values = salesAnalytics.value.map(
+    (item) => item.transactions,
+  )
+
+  return Math.max(...values, 0)
+})
+
+const hasSalesAnalytics = computed(
+  () =>
+    salesAnalytics.value.length > 0 &&
+    (maxSales.value > 0 || maxTransactions.value > 0),
+)
+
 const outOfStockAlerts = computed(() =>
   stockAlerts.value.filter(
     (alert) => alert.status === 'OUT_OF_STOCK',
@@ -143,24 +168,50 @@ const dashboardLoaded = computed(
   () => dashboardState.value === 'loaded',
 )
 
-async function loadDashboardAnalytics() {
+async function loadDashboardAnalytics(
+  days: 7 | 30 = selectedPeriod.value,
+) {
   const accessToken = localStorage.getItem(
     'access_token',
   )
 
   if (!accessToken) {
+    analyticsError.value =
+      'Sesi login tidak ditemukan. Silakan masuk kembali.'
     dashboardState.value = 'partial_error'
     return
   }
 
+  analyticsLoading.value = true
+  analyticsError.value = ''
+
   try {
     dashboardAnalytics.value =
-      await getDashboardAnalytics(accessToken)
+      await getDashboardAnalytics(
+        accessToken,
+        days,
+      )
 
     dashboardState.value = 'loaded'
-  } catch {
+  } catch (error) {
+    analyticsError.value =
+      error instanceof Error
+        ? error.message
+        : 'Gagal mengambil analytics penjualan.'
+
     dashboardState.value = 'partial_error'
+  } finally {
+    analyticsLoading.value = false
   }
+}
+
+function selectPeriod(days: 7 | 30) {
+  if (selectedPeriod.value === days) {
+    return
+  }
+
+  selectedPeriod.value = days
+  loadDashboardAnalytics(days)
 }
 
 async function loadStockAlerts() {
@@ -207,6 +258,32 @@ function formatCurrency(value: number) {
     currency: 'IDR',
     maximumFractionDigits: 0,
   }).format(value)
+}
+
+function formatAnalyticsDate(date: string) {
+  return new Intl.DateTimeFormat('id-ID', {
+    day: '2-digit',
+    month: 'short',
+    timeZone: 'UTC',
+  }).format(new Date(`${date}T00:00:00Z`))
+}
+
+function getSalesBarHeight(sales: number) {
+  if (maxSales.value <= 0) {
+    return 0
+  }
+
+  return (sales / maxSales.value) * 100
+}
+
+function getTransactionBarHeight(
+  transactions: number,
+) {
+  if (maxTransactions.value <= 0) {
+    return 0
+  }
+
+  return (transactions / maxTransactions.value) * 100
 }
 
 onMounted(() => {
@@ -355,15 +432,21 @@ onMounted(() => {
             </p>
 
             <p class="panel-caption">
-              Periode berjalan
+              Penjualan dan jumlah transaksi per hari
             </p>
           </div>
 
           <div class="period-selector">
             <button
               type="button"
-              class="period-button period-button--active"
-              aria-pressed="true"
+              class="period-button"
+              :class="{
+                'period-button--active':
+                  selectedPeriod === 7,
+              }"
+              :aria-pressed="selectedPeriod === 7"
+              :disabled="analyticsLoading"
+              @click="selectPeriod(7)"
             >
               7 hari
             </button>
@@ -371,7 +454,13 @@ onMounted(() => {
             <button
               type="button"
               class="period-button"
-              aria-pressed="false"
+              :class="{
+                'period-button--active':
+                  selectedPeriod === 30,
+              }"
+              :aria-pressed="selectedPeriod === 30"
+              :disabled="analyticsLoading"
+              @click="selectPeriod(30)"
             >
               30 hari
             </button>
@@ -379,30 +468,127 @@ onMounted(() => {
         </div>
 
         <div
-          class="analytics-placeholder"
-          role="img"
-          aria-label="Area grafik penjualan dan transaksi"
+          v-if="analyticsLoading"
+          class="analytics-state"
+          aria-live="polite"
         >
-          <div class="chart-grid" aria-hidden="true">
-            <span />
-            <span />
-            <span />
-            <span />
+          <div class="skeleton skeleton--chart" />
+
+          <p>
+            Memuat analytics penjualan...
+          </p>
+        </div>
+
+        <div
+          v-else-if="analyticsError"
+          class="analytics-state analytics-state--error"
+          role="alert"
+        >
+          <div class="chart-icon" aria-hidden="true">
+            !
           </div>
 
-          <div class="chart-empty">
-            <div class="chart-icon" aria-hidden="true">
-              ↗
+          <p>
+            Analytics penjualan tidak dapat dimuat.
+          </p>
+
+          <span>
+            {{ analyticsError }}
+          </span>
+
+          <button
+            type="button"
+            class="button button--primary"
+            @click="loadDashboardAnalytics()"
+          >
+            Coba lagi
+          </button>
+        </div>
+
+        <div
+          v-else-if="!hasSalesAnalytics"
+          class="analytics-state"
+        >
+          <div class="chart-icon" aria-hidden="true">
+            ↗
+          </div>
+
+          <p>
+            Belum ada transaksi pada periode ini.
+          </p>
+
+          <span>
+            Grafik akan muncul setelah transaksi penjualan
+            tersedia.
+          </span>
+        </div>
+
+        <div
+          v-else
+          class="analytics-chart"
+        >
+          <div class="analytics-legend">
+            <span class="legend-item">
+              <span
+                class="legend-marker legend-marker--sales"
+                aria-hidden="true"
+              />
+              Penjualan
+            </span>
+
+            <span class="legend-item">
+              <span
+                class="legend-marker legend-marker--transactions"
+                aria-hidden="true"
+              />
+              Transaksi
+            </span>
+          </div>
+
+          <div class="chart-area">
+            <div class="chart-axis-labels" aria-hidden="true">
+              <span>
+                {{ formatCurrency(maxSales) }}
+              </span>
+
+              <span>
+                Rp0
+              </span>
             </div>
 
-            <p>
-              Data penjualan belum tersedia
-            </p>
+            <div class="chart-bars">
+              <div
+                v-for="item in salesAnalytics"
+                :key="item.date"
+                class="chart-column"
+              >
+                <div class="chart-column__bars">
+                  <div
+                    class="chart-bar chart-bar--sales"
+                    :style="{
+                      height: `${getSalesBarHeight(item.sales)}%`,
+                    }"
+                    :title="`Penjualan ${formatCurrency(item.sales)}`"
+                  />
 
-            <span>
-              Grafik akan muncul setelah data transaksi
-              tersedia.
-            </span>
+                  <div
+                    class="chart-bar chart-bar--transactions"
+                    :style="{
+                      height: `${getTransactionBarHeight(item.transactions)}%`,
+                    }"
+                    :title="`${item.transactions} transaksi`"
+                  />
+                </div>
+
+                <span class="chart-date">
+                  {{ formatAnalyticsDate(item.date) }}
+                </span>
+
+                <span class="chart-transaction-count">
+                  {{ item.transactions }} trx
+                </span>
+              </div>
+            </div>
           </div>
         </div>
       </article>
@@ -1107,6 +1293,178 @@ onMounted(() => {
   line-height: 18px;
 }
 
+.analytics-state {
+  min-height: 310px;
+  margin-top: 16px;
+  padding: 24px;
+  border: 1px solid #e6ebe8;
+  border-radius: 6px;
+  background: #f8faf9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  text-align: center;
+}
+
+.analytics-state p {
+  margin: 0;
+  color: #46514b;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.analytics-state span {
+  max-width: 420px;
+  margin-top: 4px;
+  color: #6b756f;
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.analytics-state .button {
+  margin-top: 14px;
+}
+
+.analytics-state--error {
+  background: #fff8f7;
+}
+
+.analytics-chart {
+  margin-top: 16px;
+  overflow: hidden;
+  border: 1px solid #e6ebe8;
+  border-radius: 6px;
+  background: #f8faf9;
+}
+
+.analytics-legend {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 12px 16px;
+  border-bottom: 1px solid #e6ebe8;
+  background: #fff;
+}
+
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: #46514b;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.legend-marker {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+}
+
+.legend-marker--sales {
+  background: #176b4d;
+}
+
+.legend-marker--transactions {
+  background: #8aa99d;
+}
+
+.chart-area {
+  position: relative;
+  min-height: 310px;
+  padding: 24px 16px 16px 58px;
+}
+
+.chart-axis-labels {
+  position: absolute;
+  top: 24px;
+  bottom: 42px;
+  left: 10px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  color: #6b756f;
+  font-size: 10px;
+  line-height: 14px;
+}
+
+.chart-bars {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(20px, 1fr));
+  align-items: stretch;
+  gap: 6px;
+  height: 245px;
+  border-bottom: 1px solid #cfd8d3;
+  background-image: linear-gradient(
+    to bottom,
+    #e6ebe8 1px,
+    transparent 1px
+  );
+  background-size: 100% 25%;
+}
+
+.chart-column {
+  display: flex;
+  min-width: 0;
+  height: 100%;
+  align-items: flex-end;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+
+.chart-column__bars {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 2px;
+  width: 100%;
+  height: calc(100% - 30px);
+}
+
+.chart-bar {
+  width: 42%;
+  min-height: 2px;
+  border-radius: 2px 2px 0 0;
+  transition: height 180ms ease;
+}
+
+.chart-bar--sales {
+  background: #176b4d;
+}
+
+.chart-bar--transactions {
+  background: #8aa99d;
+}
+
+.chart-date {
+  width: 100%;
+  margin-top: 8px;
+  overflow: hidden;
+  color: #6b756f;
+  font-size: 10px;
+  line-height: 14px;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chart-transaction-count {
+  display: none;
+}
+
+.skeleton--chart {
+  width: 100%;
+  height: 245px;
+  margin-bottom: 16px;
+  border-radius: 6px;
+}
+
+.period-button:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
 .section-heading--attention {
   align-items: center;
 }
@@ -1587,6 +1945,27 @@ button:focus-visible {
 
   .analytics-placeholder {
     min-height: 240px;
+  }
+
+  .analytics-state {
+    min-height: 240px;
+  }
+
+  .analytics-chart {
+    overflow-x: auto;
+  }
+
+  .analytics-legend {
+    padding: 10px 12px;
+  }
+
+  .chart-area {
+    min-width: 620px;
+    min-height: 260px;
+  }
+
+  .chart-bars {
+    height: 200px;
   }
 
   .section-heading--attention {
