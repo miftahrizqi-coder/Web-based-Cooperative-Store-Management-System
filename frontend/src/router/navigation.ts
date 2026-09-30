@@ -37,6 +37,61 @@ export const navigationItems: NavigationItem[] = [
     to: '/supplier-products',
     roles: ['admin', 'pengurus'],
   },
+  {
+    label: 'Penerimaan Barang',
+    to: '/goods-receipts',
+    roles: ['admin', 'pengurus'],
+  },
+  {
+    label: 'Purchase',
+    to: '/purchases',
+    roles: ['admin', 'pengurus'],
+  },
+    {
+    label: 'Supplier Invoices',
+    to: '/supplier-invoices',
+    roles: ['admin', 'pengurus'],
+  },
+  {
+    label: 'Hutang Supplier',
+    to: '/supplier-payables',
+    roles: ['admin', 'pengurus'],
+  },
+  {
+    label: 'Pembayaran Supplier',
+    to: '/supplier-payments',
+    roles: ['admin', 'pengurus'],
+  },
+  {
+    label: 'Activity Timeline',
+    to: '/activities',
+    roles: ['admin', 'pengurus'],
+  },
+  {
+    label: 'Stok',
+    to: '/inventory',
+    roles: ['admin', 'pengurus'],
+  },
+  {
+    label: 'Stock Movement',
+    to: '/inventory/movements',
+    roles: ['admin', 'pengurus'],
+  },
+  {
+    label: 'Stock Adjustment',
+    to: '/inventory/adjustment',
+    roles: ['admin', 'pengurus'],
+  },
+  {
+    label: 'Stock Opname',
+    to: '/inventory/stock-opname',
+    roles: ['admin', 'pengurus'],
+  },
+  {
+    label: 'POS',
+    to: '/pos',
+    roles: ['kasir'],
+  },
 ]
 
 export function getLandingPage(role: UserRole): string {

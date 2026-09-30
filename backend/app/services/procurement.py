@@ -30,6 +30,12 @@ from app.schemas.procurement import (
     SupplierPaymentCreate,
 )
 
+from app.models.activity import(
+    ActivityEntityType,
+    ActivityType,
+)
+
+from app.services.activity import create_activity
 
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
@@ -177,12 +183,23 @@ async def create_purchase_order(
             )
     await purchase_order.insert()
 
+    await create_activity(
+    entity_type=ActivityEntityType.PURCHASE_ORDER,
+    entity_id=str(purchase_order.id),
+    activity_type=ActivityType.CREATED,
+    actor_id=user_id,
+    reference_number=purchase_order.poNumber,
+    description=(
+        f"Purchase Order {purchase_order.poNumber} dibuat"
+    ),
+)
     return purchase_order
 
 
 async def update_purchase_order(
     po_id: str,
     payload: PurchaseOrderUpdate,
+    user_id:str,
 ) -> PurchaseOrder:
     purchase_order = await PurchaseOrder.get(po_id)
 
@@ -280,11 +297,23 @@ async def update_purchase_order(
             )
     await purchase_order.save()
 
+    await create_activity(
+        entity_type=ActivityEntityType.PURCHASE_ORDER,
+        entity_id=str(purchase_order.id),
+        activity_type=ActivityType.UPDATED,
+        actor_id=user_id,
+        reference_number=purchase_order.poNumber,
+        description=(
+            f"Purchase Order {purchase_order.poNumber} diperbarui"
+        ),
+    )
+
     return purchase_order
 
 
 async def submit_purchase_order(
     po_id: str,
+    user_id: str,
 ) -> PurchaseOrder:
     purchase_order = await PurchaseOrder.get(po_id)
 
@@ -305,6 +334,17 @@ async def submit_purchase_order(
 
     await purchase_order.save()
 
+    await create_activity(
+        entity_type=ActivityEntityType.PURCHASE_ORDER,
+        entity_id=str(purchase_order.id),
+        activity_type=ActivityType.SUBMITTED,
+        actor_id=user_id,
+        reference_number=purchase_order.poNumber,
+        description=(
+            f"Purchase Order {purchase_order.poNumber} "
+            "diajukan untuk approval"
+        ),
+    )
     return purchase_order
 
 
@@ -340,12 +380,23 @@ async def approve_purchase_order(
     purchase_order.updatedAt = utc_now()
 
     await purchase_order.save()
-
+    await create_activity(
+        entity_type=ActivityEntityType.PURCHASE_ORDER,
+        entity_id=str(purchase_order.id),
+        activity_type=ActivityType.APPROVED,
+        actor_id=user_id,
+        reference_number=purchase_order.poNumber,
+        description=(
+            f"Purchase Order {purchase_order.poNumber} "
+            "disetujui"
+        ),
+    )
     return purchase_order
 
 
 async def order_purchase_order(
     po_id: str,
+    user_id: str,
 ) -> PurchaseOrder:
     purchase_order = await PurchaseOrder.get(po_id)
 
@@ -368,12 +419,23 @@ async def order_purchase_order(
     purchase_order.updatedAt = utc_now()
 
     await purchase_order.save()
-
+    await create_activity(
+        entity_type=ActivityEntityType.PURCHASE_ORDER,
+        entity_id=str(purchase_order.id),
+        activity_type=ActivityType.ORDERED,
+        actor_id=user_id,
+        reference_number=purchase_order.poNumber,
+        description=(
+            f"Purchase Order {purchase_order.poNumber} "
+            "ditandai sebagai ordered"
+        ),
+    )
     return purchase_order
 
 
 async def cancel_purchase_order(
     po_id: str,
+    user_id: str,
 ) -> PurchaseOrder:
     purchase_order = await PurchaseOrder.get(po_id)
 
@@ -404,6 +466,17 @@ async def cancel_purchase_order(
 
     await purchase_order.save()
 
+    await create_activity(
+        entity_type=ActivityEntityType.PURCHASE_ORDER,
+        entity_id=str(purchase_order.id),
+        activity_type=ActivityType.CANCELLED,
+        actor_id=user_id,
+        reference_number=purchase_order.poNumber,
+        description=(
+            f"Purchase Order {purchase_order.poNumber} "
+            "dibatalkan"
+        ),
+    )
     return purchase_order
 
 
@@ -654,7 +727,17 @@ async def create_goods_receipt(
     purchase_order.updatedAt = utc_now()
 
     await purchase_order.save()
-
+    await create_activity(
+        entity_type=ActivityEntityType.GOODS_RECEIPT,
+        entity_id=str(receipt.id),
+        activity_type=ActivityType.CREATED,
+        actor_id=user_id,
+        reference_number=receipt.receiptNumber,
+        description=(
+            f"Goods Receipt {receipt.receiptNumber} "
+            f"dibuat untuk PO {purchase_order.poNumber}"
+        ),
+    )
     return receipt
 
 
@@ -762,12 +845,22 @@ async def create_purchase(
     )
 
     await purchase.insert()
-
+    await create_activity(
+        entity_type=ActivityEntityType.PURCHASE,
+        entity_id=str(purchase.id),
+        activity_type=ActivityType.CREATED,
+        actor_id=user_id,
+        reference_number=purchase.purchaseNumber,
+        description=(
+            f"Purchase {purchase.purchaseNumber} dibuat"
+        ),
+    )
     return purchase
 
 
 async def create_supplier_invoice(
     payload: SupplierInvoiceCreate,
+    user_id: str,
 ) -> SupplierInvoice:
     receipt = await GoodsReceipt.get(
         payload.receiptId
@@ -836,7 +929,17 @@ async def create_supplier_invoice(
     )
 
     await invoice.insert()
-
+    await create_activity(
+        entity_type=ActivityEntityType.SUPPLIER_INVOICE,
+        entity_id=str(invoice.id),
+        activity_type=ActivityType.CREATED,
+        actor_id=user_id,
+        reference_number=invoice.invoiceNumber,
+        description=(
+            f"Supplier Invoice {invoice.invoiceNumber} "
+            "dibuat"
+        ),
+    )
     return invoice
 
 
@@ -861,13 +964,20 @@ async def get_supplier_payables() -> list[dict]:
             0,
         )
 
+        due_date = invoice.dueDate
+
+        if due_date.tzinfo is None:
+            due_date = due_date.replace(
+                tzinfo=timezone.utc,
+            )
+
         if outstanding == 0:
             payment_status = PaymentStatus.PAID
         elif paid > 0:
             payment_status = (
                 PaymentStatus.PARTIALLY_PAID
             )
-        elif invoice.dueDate < utc_now():
+        elif due_date < utc_now():
             payment_status = PaymentStatus.OVERDUE
         else:
             payment_status = PaymentStatus.UNPAID
@@ -881,12 +991,11 @@ async def get_supplier_payables() -> list[dict]:
                 "paid": paid,
                 "outstanding": outstanding,
                 "paymentStatus": payment_status,
-                "dueDate": invoice.dueDate,
+                "dueDate": due_date,
             }
         )
 
     return result
-
 
 async def create_supplier_payment(
     payload: SupplierPaymentCreate,
@@ -964,4 +1073,25 @@ async def create_supplier_payment(
 
     await invoice.save()
 
+    purchase = await Purchase.find_one(
+        Purchase.receiptId == invoice.receiptId
+    )
+
+    if purchase:
+        purchase.paymentStatus = (
+            invoice.paymentStatus
+        )
+        await purchase.save()
+
+    await create_activity(
+        entity_type=ActivityEntityType.SUPPLIER_PAYMENT,
+        entity_id=str(payment.id),
+        activity_type=ActivityType.CREATED,
+        actor_id=user_id,
+        reference_number=payment.paymentNumber,
+        description=(
+            f"Supplier Payment {payment.paymentNumber} "
+            f"sebesar {payment.amount} dicatat"
+        ),
+    )
     return payment

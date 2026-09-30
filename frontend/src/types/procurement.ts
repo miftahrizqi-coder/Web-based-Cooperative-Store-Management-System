@@ -54,3 +54,175 @@ export interface PurchaseOrderPayload {
   shippingCost: number
   expectedDeliveryDate: string | null
 }
+
+export interface GoodsReceiptItem {
+  productId: string
+  name: string
+  orderedQuantity: number
+  previouslyReceivedQuantity: number
+  receivedQuantity: number
+  acceptedQuantity: number
+  rejectedQuantity: number
+  rejectionReason: string | null
+}
+
+export interface GoodsReceipt {
+  id: string
+  receiptNumber: string
+  purchaseOrderId: string
+  supplierId: string
+  items: GoodsReceiptItem[]
+  receivedBy: string
+  receivedAt: string
+  notes: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface GoodsReceiptItemPayload {
+  productId: string
+  name: string
+  receivedQuantity: number
+  acceptedQuantity: number
+  rejectedQuantity: number
+  rejectionReason: string | null
+}
+
+export interface GoodsReceiptPayload {
+  purchaseOrderId: string
+  items: GoodsReceiptItemPayload[]
+  notes: string | null
+}
+
+export type PaymentStatus =
+  | 'UNPAID'
+  | 'PARTIALLY_PAID'
+  | 'PAID'
+  | 'OVERDUE'
+
+export interface PurchaseItem {
+  productId: string
+  name: string
+  quantity: number
+  price: number
+  subtotal: number
+}
+
+export interface Purchase {
+  id: string
+  purchaseNumber: string
+  supplierId: string
+  purchaseOrderId: string
+  receiptId: string
+  items: PurchaseItem[]
+  subtotal: number
+  discount: number
+  total: number
+  paymentStatus: PaymentStatus
+  createdBy: string
+  createdAt: string
+}
+
+export interface PurchasePayload {
+  receiptId: string
+  discount: number
+}
+
+export type SupplierInvoicePaymentStatus =
+  | 'UNPAID'
+  | 'PARTIALLY_PAID'
+  | 'PAID'
+  | 'OVERDUE'
+
+export interface SupplierInvoice {
+  id: string
+  invoiceNumber: string
+  supplierId: string
+  purchaseId: string
+  purchaseOrderId: string
+  receiptId: string
+  subtotal: number
+  tax: number
+  shipping: number
+  total: number
+  paymentStatus: SupplierInvoicePaymentStatus
+  invoiceDate: string
+  dueDate: string | null
+  createdBy: string
+  createdAt: string
+}
+
+export interface SupplierInvoicePayload {
+  receiptId: string
+  invoiceNumber: string
+  invoiceDate: string
+  dueDate: string
+  tax: number
+  shippingCost: number
+}
+
+export interface SupplierPayable {
+  invoiceId: string
+  invoiceNumber: string
+  supplierId: string
+  total: number
+  paid: number
+  outstanding: number
+  paymentStatus: PaymentStatus
+  dueDate: string
+}
+
+export type SupplierPaymentMethod =
+  | 'CASH'
+  | 'BANK_TRANSFER'
+  | 'GIRO'
+  | 'OTHER'
+
+export interface SupplierPayment {
+  id: string
+  supplierId: string
+  invoiceId: string
+  paymentNumber: string
+  amount: number
+  method: SupplierPaymentMethod
+  paymentDate: string
+  referenceNumber: string | null
+  createdBy: string
+  notes: string | null
+  createdAt: string
+}
+
+export interface SupplierPaymentPayload {
+  invoiceId: string
+  amount: number
+  method: SupplierPaymentMethod
+  paymentDate: string
+  referenceNumber: string | null
+  notes: string | null
+}
+
+export type ActivityEntityType =
+  | 'PURCHASE_ORDER'
+  | 'GOODS_RECEIPT'
+  | 'PURCHASE'
+  | 'SUPPLIER_INVOICE'
+  | 'SUPPLIER_PAYMENT'
+
+export type ActivityType =
+  | 'CREATED'
+  | 'UPDATED'
+  | 'SUBMITTED'
+  | 'APPROVED'
+  | 'ORDERED'
+  | 'CANCELLED'
+
+export interface Activity {
+  id: string
+  entityType: ActivityEntityType
+  entityId: string
+  activityType: ActivityType
+  referenceNumber: string | null
+  description: string
+  actorId: string
+  createdAt: string
+}

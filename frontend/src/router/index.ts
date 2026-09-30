@@ -168,6 +168,190 @@ const router = createRouter({
         roles: ['admin', 'pengurus'],
       },
     },
+    {
+      path: '/goods-receipts',
+      name: 'goods-receipts',
+      component: () => import('../pages/procurement/GoodsReceiptListPage.vue'),
+      meta: {
+        requiresAuth: true,
+        roles: ['admin', 'pengurus'],
+      },
+    },
+
+    {
+      path: '/goods-receipts/create/:id',
+      name: 'goods-receipt-create',
+      component: () =>
+        import('../pages/procurement/GoodsReceiptFormPage.vue'),
+      meta: {
+        requiresAuth: true,
+        roles: ['admin', 'pengurus'],
+      },
+    },
+
+    {
+      path: '/goods-receipts/:id',
+      name: 'goods-receipt-detail',
+      component: () =>
+        import('../pages/procurement/GoodsReceiptDetailPage.vue'),
+      meta: {
+        requiresAuth: true,
+        roles: ['admin', 'pengurus'],
+      },
+    },
+    {
+      path: '/purchases',
+      name: 'purchases',
+      component: () =>
+        import('../pages/procurement/PurchaseListPage.vue'),
+      meta: {
+        requiresAuth: true,
+        roles: ['admin', 'pengurus'],
+      },
+    },
+    {
+      path: '/purchases/create',
+      name: 'purchase-create',
+      component: () =>
+        import('../pages/procurement/PurchaseCreatePage.vue'),
+      meta: {
+        requiresAuth: true,
+        roles: ['admin', 'pengurus'],
+      },
+    },
+    {
+      path: '/purchases/:id',
+      name: 'purchase-detail',
+      component: () =>
+        import('../pages/procurement/PurchaseDetailPage.vue'),
+      meta: {
+        requiresAuth: true,
+        roles: ['admin', 'pengurus'],
+      },
+    },
+    {
+      path: '/supplier-invoices',
+      name: 'supplier-invoice',
+      component: () =>
+        import(
+          '../pages/procurement/SupplierInvoiceListPage.vue'
+        ),
+      meta: {
+        requiresAuth: true,
+        roles: ['admin', 'pengurus'],
+      },
+    },
+    {
+      path: '/supplier-invoices/create',
+      name: 'supplier-invoice-create',
+      component: () =>
+        import(
+          '../pages/procurement/SupplierInvoiceCreatePage.vue'
+        ),
+      meta: {
+        requiresAuth: true,
+        roles: ['admin', 'pengurus'],
+      },
+    },
+    {
+      path: '/supplier-invoices/:id',
+      name: 'supplier-invoice-detail',
+      component: () =>
+        import(
+          '../pages/procurement/SupplierInvoiceDetailPage.vue'
+        ),
+      meta: {
+        requiresAuth: true,
+        roles: ['admin', 'pengurus'],
+      },
+    },
+    {
+      path: '/supplier-payables',
+      name: 'supplier-payables',
+      component: () =>
+        import('../pages/procurement/SupplierPayableListPage.vue'),
+      meta: {
+        requiresAuth: true,
+        roles: ['admin', 'pengurus'],
+      },
+    },
+    {
+      path: '/supplier-payments',
+      name: 'supplier-payments',
+      component: () =>
+        import('../pages/procurement/SupplierPaymentListPage.vue'),
+      meta: {
+        requiresAuth: true,
+        roles: ['admin', 'pengurus'],
+      },
+    },
+    {
+      path: '/supplier-payments/create',
+      name: 'supplier-payment-create',
+      component: () =>
+        import('../pages/procurement/SupplierPaymentCreatePage.vue'),
+      meta: {
+        requiresAuth: true,
+        roles: ['admin', 'pengurus'],
+      },
+    },
+    {
+      path: '/activities',
+      component: () =>
+        import('../pages/activity/ActivityListPage.vue'),
+      meta: {
+        roles: ['admin', 'pengurus'],
+      },
+    },
+    {
+      path: '/inventory',
+      name: 'inventory',
+      component: () =>
+        import('../pages/inventory/InventoryListPage.vue'),
+      meta: {
+        roles: ['admin', 'pengurus'],
+      },
+    },
+    {
+      path: '/inventory/movements',
+      name: 'stock-movements',
+      component: () =>
+        import(
+          '../pages/inventory/StockMovementListPage.vue'
+        ),
+      meta: {
+        roles: ['admin', 'pengurus'],
+      },
+    },
+    {
+      path: '/inventory/adjustment',
+      name: 'inventory-adjustment',
+      component: () =>
+        import('../pages/inventory/StockAdjustmentPage.vue'),
+      meta: {
+        roles: ['admin', 'pengurus'],
+      },
+    },
+    {
+      path: '/inventory/stock-opname',
+      component: () =>
+        import(
+          '../pages/inventory/StockOpnamePage.vue'
+        ),
+      meta: {
+        roles: ['admin', 'pengurus'],
+      },
+    },
+    {
+      path: '/pos',
+      name: 'pos',
+      component: () =>
+        import('../pages/POS/POSPage.vue'),
+      meta: {
+        requiresAuth: true,
+        roles: ['kasir'],
+      },
+    },
   ],
 })
 

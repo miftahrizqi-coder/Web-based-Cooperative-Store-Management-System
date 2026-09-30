@@ -2,14 +2,18 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from app.api.activity import router as activity_router
 from app.api.auth import router as auth_router
 from app.api.users import router as users_router
 from app.api.procurement import router as procurement_router
 from app.api.products import router as products_router
 from app.api.suppliers import router as suppliers_router
+from app.api.inventory import router as inventory_router
 from app.api.supplier_products import router as supplier_products_router
 from app.api.inventory import router as inventory_router
 from app.core.database import client, init_db
+from app.api.sales import router as sales_router
+from app.api.members import router as members_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -26,4 +30,7 @@ app.include_router(procurement_router)
 app.include_router(products_router)
 app.include_router(suppliers_router)
 app.include_router(supplier_products_router)
+app.include_router(activity_router, prefix="/api")
 app.include_router(inventory_router)
+app.include_router(sales_router)
+app.include_router(members_router)

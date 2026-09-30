@@ -2,10 +2,13 @@ from beanie import init_beanie
 from pymongo import AsyncMongoClient
 
 from app.models.supplier_product import SupplierProduct
+from app.models.sales import Sale
 from app.core.config import settings
+from app.models.activity import Activity
 from app.models.product import Product
 from app.models.user import User
 from app.models.supplier import Supplier
+from app.models.member import Member
 from app.models.procurement import (
     GoodsReceipt,
     Purchase,
@@ -15,7 +18,7 @@ from app.models.procurement import (
 )
 from app.models.inventory import (
     InventoryAuditEvent,
-    StockMovement,
+    StockMovement
 )
 
 
@@ -28,6 +31,8 @@ async def init_db():
         database=client[settings.mongodb_database],
         document_models=[
             User,
+            Member,
+            Activity,
             Supplier,
             Product,
             PurchaseOrder,
@@ -36,7 +41,8 @@ async def init_db():
             SupplierProduct,
             SupplierInvoice,
             SupplierPayment,
-            StockMovement,
             InventoryAuditEvent,
+            StockMovement,
+            Sale,
         ],
     )

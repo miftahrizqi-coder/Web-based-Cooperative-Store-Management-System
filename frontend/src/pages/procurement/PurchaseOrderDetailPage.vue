@@ -109,6 +109,14 @@ const canApprove = computed(() => {
   )
 })
 
+const canReceive = computed(
+  () =>
+    (purchaseOrder.value?.status === 'ORDERED' ||
+      purchaseOrder.value?.status === 'PARTIALLY_RECEIVED') &&
+    (currentUser.value?.role === 'admin' ||
+      currentUser.value?.role === 'pengurus'),
+)
+
 const canOrder = computed(
   () =>
     purchaseOrder.value?.status === 'APPROVED' &&
@@ -493,6 +501,18 @@ onMounted(loadPurchaseOrder)
           @click="runAction('cancel')"
         >
           Batalkan PO
+        </button>
+        <button
+          v-if="canReceive"
+          type="button"
+          class="rounded-lg bg-green-800 px-4 py-2.5 text-sm font-medium text-white hover:bg-green-900 focus:outline-none focus:ring-2 focus:ring-green-700 focus:ring-offset-2"
+          @click="
+            router.push(
+              `/goods-receipts/create/${purchaseOrder.id}`,
+            )
+          "
+        >
+          Terima Barang
         </button>
       </section>
     </template>

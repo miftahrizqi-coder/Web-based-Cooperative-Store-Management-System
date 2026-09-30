@@ -1,7 +1,20 @@
 import type {
+  Activity,
+  ActivityEntityType,
+  ActivityType,
+  GoodsReceipt,
+  GoodsReceiptPayload,
+  Purchase,
   PurchaseOrder,
   PurchaseOrderPayload,
+  PurchasePayload,
+  SupplierInvoice,
+  SupplierInvoicePayload,
+  SupplierPayable,
+  SupplierPayment,
+  SupplierPaymentPayload,
 } from '../types/procurement'
+
 
 function authHeaders(accessToken: string) {
   return {
@@ -190,4 +203,319 @@ export async function cancelPurchaseOrder(
     purchaseOrderId,
     'cancel',
   )
+
+}
+
+export async function getGoodsReceipts(
+  accessToken: string,
+): Promise<GoodsReceipt[]> {
+  const response = await fetch('/api/goods-receipts', {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  })
+
+  if (!response.ok) {
+    throw new Error(
+      await getErrorMessage(
+        response,
+        'Gagal mengambil daftar penerimaan barang.',
+      ),
+    )
+  }
+
+  return response.json()
+}
+
+export async function getGoodsReceipt(
+  accessToken: string,
+  receiptId: string,
+): Promise<GoodsReceipt> {
+  const response = await fetch(
+    `/api/goods-receipts/${receiptId}`,
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    },
+  )
+
+  if (!response.ok) {
+    throw new Error(
+      await getErrorMessage(
+        response,
+        'Gagal mengambil detail penerimaan barang.',
+      ),
+    )
+  }
+
+  return response.json()
+}
+
+export async function createGoodsReceipt(
+  accessToken: string,
+  data: GoodsReceiptPayload,
+): Promise<GoodsReceipt> {
+  const response = await fetch('/api/goods-receipts', {
+    method: 'POST',
+    headers: authHeaders(accessToken),
+    body: JSON.stringify(data),
+  })
+
+  if (!response.ok) {
+    throw new Error(
+      await getErrorMessage(
+        response,
+        'Gagal membuat penerimaan barang.',
+      ),
+    )
+  }
+
+  return response.json()
+}
+
+export async function getPurchases(
+  accessToken: string,
+): Promise<Purchase[]> {
+  const response = await fetch('/api/purchases', {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  })
+
+  if (!response.ok) {
+    throw new Error(
+      await getErrorMessage(
+        response,
+        'Gagal mengambil daftar purchase.',
+      ),
+    )
+  }
+
+  return response.json()
+}
+
+export async function getPurchase(
+  accessToken: string,
+  purchaseId: string,
+): Promise<Purchase> {
+  const response = await fetch(
+    `/api/purchases/${purchaseId}`,
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    },
+  )
+
+  if (!response.ok) {
+    throw new Error(
+      await getErrorMessage(
+        response,
+        'Gagal mengambil detail purchase.',
+      ),
+    )
+  }
+
+  return response.json()
+}
+
+export async function createPurchase(
+  accessToken: string,
+  data: PurchasePayload,
+): Promise<Purchase> {
+  const response = await fetch('/api/purchases', {
+    method: 'POST',
+    headers: authHeaders(accessToken),
+    body: JSON.stringify(data),
+  })
+
+  if (!response.ok) {
+    throw new Error(
+      await getErrorMessage(
+        response,
+        'Gagal membuat purchase.',
+      ),
+    )
+  }
+
+  return response.json()
+}
+
+export async function getSupplierInvoices(
+  accessToken: string,
+): Promise<SupplierInvoice[]> {
+  const response = await fetch('/api/supplier-invoices', {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  })
+
+  if (!response.ok) {
+    throw new Error(
+      await getErrorMessage(
+        response,
+        'Gagal mengambil daftar supplier invoice.',
+      ),
+    )
+  }
+
+  return response.json()
+}
+
+export async function getSupplierInvoice(
+  accessToken: string,
+  invoiceId: string,
+): Promise<SupplierInvoice> {
+  const response = await fetch(
+    `/api/supplier-invoices/${invoiceId}`,
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    },
+  )
+
+  if (!response.ok) {
+    throw new Error(
+      await getErrorMessage(
+        response,
+        'Gagal mengambil detail supplier invoice.',
+      ),
+    )
+  }
+
+  return response.json()
+}
+
+export async function createSupplierInvoice(
+  accessToken: string,
+  data: SupplierInvoicePayload,
+): Promise<SupplierInvoice> {
+  const response = await fetch('/api/supplier-invoices', {
+    method: 'POST',
+    headers: authHeaders(accessToken),
+    body: JSON.stringify(data),
+  })
+
+  if (!response.ok) {
+    throw new Error(
+      await getErrorMessage(
+        response,
+        'Gagal membuat supplier invoice.',
+      ),
+    )
+  }
+
+  return response.json()
+}
+
+export async function getSupplierPayables(
+  accessToken: string,
+): Promise<SupplierPayable[]> {
+  const response = await fetch('/api/supplier-payables', {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  })
+
+  if (!response.ok) {
+    throw new Error(
+      await getErrorMessage(
+        response,
+        'Gagal mengambil daftar hutang supplier.',
+      ),
+    )
+  }
+
+  return response.json()
+}
+
+export async function getSupplierPayments(
+  accessToken: string,
+): Promise<SupplierPayment[]> {
+  const response = await fetch('/api/supplier-payments', {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  })
+
+  if (!response.ok) {
+    throw new Error(
+      await getErrorMessage(
+        response,
+        'Gagal mengambil daftar pembayaran supplier.',
+      ),
+    )
+  }
+
+  return response.json()
+}
+
+export async function createSupplierPayment(
+  accessToken: string,
+  data: SupplierPaymentPayload,
+): Promise<SupplierPayment> {
+  const response = await fetch('/api/supplier-payments', {
+    method: 'POST',
+    headers: authHeaders(accessToken),
+    body: JSON.stringify(data),
+  })
+
+  if (!response.ok) {
+    throw new Error(
+      await getErrorMessage(
+        response,
+        'Gagal mencatat pembayaran supplier.',
+      ),
+    )
+  }
+
+  return response.json()
+}
+
+export async function getActivities(
+  accessToken: string,
+  params?: {
+    entityType?: ActivityEntityType
+    activityType?: ActivityType
+  },
+): Promise<Activity[]> {
+  const searchParams = new URLSearchParams()
+
+  if (params?.entityType) {
+    searchParams.set(
+      'entityType',
+      params.entityType,
+    )
+  }
+
+  if (params?.activityType) {
+    searchParams.set(
+      'activityType',
+      params.activityType,
+    )
+  }
+
+  const query = searchParams.toString()
+
+  const response = await fetch(
+    `/api/activities${query ? `?${query}` : ''}`,
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    },
+  )
+
+  if (!response.ok) {
+    throw new Error(
+      await getErrorMessage(
+        response,
+        'Gagal mengambil Activity Timeline.',
+      ),
+    )
+  }
+
+  return response.json()
 }
