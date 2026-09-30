@@ -1,10 +1,15 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { getUser, updateUser } from '../../api/users'
 import type { UserRole } from '../../types/auth'
 import { useAuth } from '../../stores/auth'
+
+/* Sesuaikan dengan route daftar pengguna */
+const USERS_ROUTE = '/users'
+
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 const route = useRoute()
 const router = useRouter()
@@ -12,52 +17,115 @@ const { token } = useAuth()
 
 const userId = route.params.id as string
 
+/* ---------- State ---------- */
 const username = ref('')
 const name = ref('')
 const email = ref('')
 const role = ref<UserRole>('kasir')
 const isActive = ref(true)
 
+/* Data terakhir yang tersimpan di server, dipakai untuk membandingkan perubahan */
+const original = ref<{
+  name: string
+  email: string
+  role: string
+  isActive: boolean
+} | null>(null)
+
 const isLoading = ref(true)
 const isSaving = ref(false)
 
-const errorMessage = ref('')
-const nameError = ref('')
-const emailError = ref('')
-const roleError = ref('')
+const loadError = ref('')
+const submitError = ref('')
+const errors = ref({ name: '', email: '', role: '' })
 
-function validateForm() {
-  nameError.value = ''
-  emailError.value = ''
-  roleError.value = ''
+const showConfirmation = ref(false)
+const submitButtonRef = ref<HTMLButtonElement | null>(null)
+const dialogRef = ref<HTMLElement | null>(null)
+const cancelButtonRef = ref<HTMLButtonElement | null>(null)
 
-  if (!name.value.trim()) {
-    nameError.value = 'Nama wajib diisi.'
-  }
+const roleOptions: Array<{ value: string; label: string }> = [
+  { value: 'admin', label: 'Admin' },
+  { value: 'kasir', label: 'Kasir' },
+  { value: 'pengurus', label: 'Pengurus' },
+  { value: 'anggota', label: 'Anggota' },
+]
 
-  if (!email.value.trim()) {
-    emailError.value = 'Email wajib diisi.'
-  } else if (!email.value.includes('@')) {
-    emailError.value = 'Format email tidak valid.'
-  }
+/* Rincian hak akses Kasir mengacu pada DESIGN.md §1.6 dan §14.
+   Role lain mengikuti PRD §3, sehingga tidak dirinci di sini. */
+const kasirCan = [
+  'Membuat transaksi penjualan',
+  'Mencari atau memindai produk',
+  'Memilih member',
+  'Menerima pembayaran dan mencetak struk',
+  'Melihat transaksi miliknya sendiri',
+]
+const kasirCannot = [
+  'Mengubah harga',
+  'Mengubah stok manual (stock adjustment)',
+  'Mengelola supplier',
+  'Menghapus transaksi',
+]
 
-  if (!role.value) {
-    roleError.value = 'Role wajib dipilih.'
-  }
-
-  return !(
-    nameError.value ||
-    emailError.value ||
-    roleError.value
-  )
+/* ---------- Derived ---------- */
+function roleLabelOf(value: string): string {
+  return roleOptions.find((o) => o.value === value)?.label ?? value
 }
 
+const roleLabel = computed(() => roleLabelOf(String(role.value)))
+
+const statusText = (active: boolean) => (active ? 'Aktif' : 'Nonaktif')
+
+const changes = computed(() => {
+  const o = original.value
+  if (!o) return []
+
+  const list: Array<{ key: string; label: string; from: string; to: string }> = []
+
+  if (name.value.trim() !== o.name) {
+    list.push({ key: 'name', label: 'Nama', from: o.name, to: name.value.trim() || '(kosong)' })
+  }
+  if (email.value.trim() !== o.email) {
+    list.push({ key: 'email', label: 'Email', from: o.email, to: email.value.trim() || '(kosong)' })
+  }
+  if (String(role.value) !== o.role) {
+    list.push({ key: 'role', label: 'Role', from: roleLabelOf(o.role), to: roleLabel.value })
+  }
+  if (isActive.value !== o.isActive) {
+    list.push({
+      key: 'status',
+      label: 'Status',
+      from: statusText(o.isActive),
+      to: statusText(isActive.value),
+    })
+  }
+  return list
+})
+
+const isDirty = computed(() => changes.value.length > 0)
+
+const isDeactivating = computed(() => !!original.value?.isActive && !isActive.value)
+const isReactivating = computed(() => !!original.value && !original.value.isActive && isActive.value)
+const isRoleChanging = computed(() => !!original.value && String(role.value) !== original.value.role)
+const needsConfirmation = computed(() => isDeactivating.value || isRoleChanging.value)
+
+const requirements = computed(() => [
+  { label: 'Nama terisi', ok: name.value.trim().length > 0 },
+  { label: 'Format email valid', ok: EMAIL_PATTERN.test(email.value.trim()) },
+  { label: 'Role dipilih', ok: !!role.value },
+])
+
+function inputClass(hasError: boolean): string {
+  return hasError ? 'border-[#C0392B]' : 'border-[#D6DDD9] focus:border-[#176B4D]'
+}
+
+/* ---------- Data ---------- */
 async function loadUser() {
-  errorMessage.value = ''
+  isLoading.value = true
+  loadError.value = ''
 
   if (!token.value) {
-    errorMessage.value =
-      'Sesi login tidak ditemukan. Silakan login kembali.'
+    loadError.value = 'Sesi login tidak ditemukan. Silakan masuk kembali.'
     isLoading.value = false
     return
   }
@@ -70,34 +138,136 @@ async function loadUser() {
     email.value = user.email
     role.value = user.role
     isActive.value = user.is_active
+
+    original.value = {
+      name: user.name.trim(),
+      email: user.email.trim(),
+      role: String(user.role),
+      isActive: user.is_active,
+    }
   } catch (error) {
-    errorMessage.value =
-      error instanceof Error
-        ? error.message
-        : 'Gagal mengambil data pengguna.'
+    loadError.value =
+      error instanceof Error ? error.message : 'Data pengguna tidak dapat diambil.'
   } finally {
     isLoading.value = false
   }
 }
 
+/* ---------- Validation ---------- */
+const fieldOrder = ['name', 'email', 'role'] as const
+
+function validateForm(): boolean {
+  errors.value = { name: '', email: '', role: '' }
+
+  if (!name.value.trim()) {
+    errors.value.name = 'Nama wajib diisi.'
+  }
+
+  if (!email.value.trim()) {
+    errors.value.email = 'Email wajib diisi.'
+  } else if (!EMAIL_PATTERN.test(email.value.trim())) {
+    errors.value.email = 'Format email tidak valid. Contoh: nama@koperasi.id'
+  }
+
+  if (!role.value) {
+    errors.value.role = 'Role wajib dipilih.'
+  }
+
+  return !Object.values(errors.value).some(Boolean)
+}
+
+async function focusFirstInvalid() {
+  await nextTick()
+  const first = fieldOrder.find((key) => errors.value[key])
+  if (first) document.getElementById(first)?.focus()
+}
+
+watch(name, () => (errors.value.name = ''))
+watch(email, () => (errors.value.email = ''))
+watch(role, () => (errors.value.role = ''))
+
+/* ---------- Actions ---------- */
 function handleCancel() {
-  router.push('/users')
+  router.push(USERS_ROUTE)
+}
+
+function toggleActive() {
+  isActive.value = !isActive.value
 }
 
 async function handleSubmit() {
-  errorMessage.value = ''
+  submitError.value = ''
 
   if (!validateForm()) {
+    await focusFirstInvalid()
+    return
+  }
+
+  if (!isDirty.value) return
+
+  if (needsConfirmation.value) {
+    showConfirmation.value = true
+    return
+  }
+
+  await saveChanges()
+}
+
+function closeConfirmation() {
+  if (isSaving.value) return
+  showConfirmation.value = false
+}
+
+watch(showConfirmation, async (open) => {
+  await nextTick()
+  if (open) {
+    cancelButtonRef.value?.focus()
+  } else {
+    submitButtonRef.value?.focus()
+  }
+})
+
+function onDialogKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape') {
+    e.preventDefault()
+    closeConfirmation()
+    return
+  }
+
+  if (e.key !== 'Tab' || !dialogRef.value) return
+
+  const focusable = dialogRef.value.querySelectorAll<HTMLElement>(
+    'button:not([disabled]), [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+  )
+  if (focusable.length === 0) return
+
+  const first = focusable[0]
+  const last = focusable[focusable.length - 1]
+
+  if (e.shiftKey && document.activeElement === first) {
+    e.preventDefault()
+    last.focus()
+  } else if (!e.shiftKey && document.activeElement === last) {
+    e.preventDefault()
+    first.focus()
+  }
+}
+
+async function saveChanges() {
+  if (!validateForm()) {
+    showConfirmation.value = false
+    await focusFirstInvalid()
     return
   }
 
   if (!token.value) {
-    errorMessage.value =
-      'Sesi login tidak ditemukan. Silakan login kembali.'
+    submitError.value = 'Sesi login tidak ditemukan. Silakan masuk kembali.'
+    showConfirmation.value = false
     return
   }
 
   isSaving.value = true
+  submitError.value = ''
 
   try {
     await updateUser(token.value, userId, {
@@ -107,12 +277,11 @@ async function handleSubmit() {
       is_active: isActive.value,
     })
 
-    await router.push('/users')
+    await router.push(USERS_ROUTE)
   } catch (error) {
-    errorMessage.value =
-      error instanceof Error
-        ? error.message
-        : 'Gagal memperbarui pengguna.'
+    const detail = error instanceof Error ? error.message : 'Terjadi kesalahan pada server.'
+    submitError.value = `Perubahan gagal disimpan dan data pengguna tidak berubah. ${detail} Periksa data lalu coba lagi.`
+    showConfirmation.value = false
   } finally {
     isSaving.value = false
   }
@@ -122,220 +291,493 @@ onMounted(loadUser)
 </script>
 
 <template>
-  <main class="mx-auto max-w-2xl">
-    <div>
-      <h1 class="text-2xl font-semibold text-gray-900">
-        Edit Pengguna
-      </h1>
+  <main class="mx-auto w-full max-w-[1440px] font-sans text-[#17201C]">
+    <!-- Breadcrumb -->
+    <nav aria-label="Breadcrumb" class="mb-3 text-[13px] leading-[18px] text-[#6B756F]">
+      <ol class="flex items-center gap-2">
+        <li>Administrasi</li>
+        <li aria-hidden="true">/</li>
+        <li>
+          <router-link
+            :to="USERS_ROUTE"
+            class="rounded-sm hover:text-[#176B4D] hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#176B4D]"
+          >
+            Pengguna
+          </router-link>
+        </li>
+        <li aria-hidden="true">/</li>
+        <li aria-current="page" class="font-medium text-[#46514B]">Edit Pengguna</li>
+      </ol>
+    </nav>
 
-      <p class="mt-1 text-sm text-gray-500">
-        Perbarui informasi dan akses pengguna.
+    <!-- Page header -->
+    <header class="mb-6">
+      <div class="flex flex-wrap items-center gap-3">
+        <h1 class="text-[28px] font-semibold leading-9 text-[#17201C]">Edit Pengguna</h1>
+        <span
+          v-if="original"
+          class="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium"
+          :class="
+            original.isActive
+              ? 'border-[#B9DFC9] bg-[#E7F4EC] text-[#0F6B3A]'
+              : 'border-[#D6DDD9] bg-[#F1F4F2] text-[#46514B]'
+          "
+        >
+          <span
+            class="h-1.5 w-1.5 rounded-full"
+            :class="original.isActive ? 'bg-[#16834B]' : 'bg-[#6B756F]'"
+            aria-hidden="true"
+          />
+          {{ statusText(original.isActive) }}
+        </span>
+      </div>
+      <p class="mt-1 max-w-2xl text-sm leading-5 text-[#46514B]">
+        <template v-if="original">
+          Perbarui informasi dan akses <span class="font-medium text-[#17201C]">{{ original.name }}</span>
+          <span class="text-[#6B756F]"> (@{{ username }})</span>. Perubahan role dan status langsung
+          memengaruhi apa yang bisa dilakukan pengguna.
+        </template>
+        <template v-else>Perbarui informasi dan akses pengguna.</template>
       </p>
+    </header>
+
+    <!-- Submit error -->
+    <div
+      v-if="submitError"
+      class="mb-6 flex items-start gap-3 rounded-lg border border-[#F0C4BF] bg-[#FBEAE8] px-4 py-3"
+      role="alert"
+    >
+      <span
+        aria-hidden="true"
+        class="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#C0392B] text-xs font-bold text-white"
+      >!</span>
+      <p class="text-sm leading-5 text-[#8E271C]">{{ submitError }}</p>
     </div>
 
+    <!-- Loading -->
     <div
       v-if="isLoading"
-      class="mt-6 rounded-xl border bg-white p-6"
+      class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]"
+      role="status"
+      aria-label="Memuat data pengguna"
     >
-      <div class="animate-pulse space-y-5">
-        <div class="h-4 w-24 rounded bg-gray-200" />
-        <div class="h-10 rounded bg-gray-200" />
-
-        <div class="h-4 w-24 rounded bg-gray-200" />
-        <div class="h-10 rounded bg-gray-200" />
-
-        <div class="h-4 w-24 rounded bg-gray-200" />
-        <div class="h-10 rounded bg-gray-200" />
+      <div class="animate-pulse space-y-6 rounded-lg border border-[#D6DDD9] bg-white p-6">
+        <div class="h-4 w-32 rounded bg-[#E6EBE8]" />
+        <div class="h-10 rounded-lg bg-[#E6EBE8]" />
+        <div class="h-4 w-24 rounded bg-[#E6EBE8]" />
+        <div class="h-10 rounded-lg bg-[#E6EBE8]" />
+        <div class="h-4 w-24 rounded bg-[#E6EBE8]" />
+        <div class="h-10 rounded-lg bg-[#E6EBE8]" />
+      </div>
+      <div class="animate-pulse space-y-4 rounded-lg border border-[#D6DDD9] bg-white p-6">
+        <div class="h-4 w-28 rounded bg-[#E6EBE8]" />
+        <div class="h-16 rounded-lg bg-[#E6EBE8]" />
+        <div class="h-16 rounded-lg bg-[#E6EBE8]" />
       </div>
     </div>
 
-    <form
-      v-else
-      class="mt-6 rounded-xl border bg-white p-6"
-      @submit.prevent="handleSubmit"
+    <!-- Load error -->
+    <div
+      v-else-if="loadError"
+      class="rounded-lg border border-[#F0C4BF] bg-white p-8 text-center"
+      role="alert"
     >
-      <div
-        v-if="errorMessage"
-        class="mb-6 rounded-lg border border-red-200 bg-red-50 p-4"
-        role="alert"
-      >
-        <p class="text-sm font-medium text-red-700">
-          {{ errorMessage }}
-        </p>
-
-        <p class="mt-1 text-sm text-red-600">
-          Periksa kembali data pengguna lalu coba lagi.
-        </p>
-      </div>
-
-      <div class="space-y-5">
-        <div>
-          <label
-            for="username"
-            class="block text-sm font-medium text-gray-700"
-          >
-            Username
-          </label>
-
-          <input
-            id="username"
-            v-model="username"
-            type="text"
-            disabled
-            class="mt-1 block w-full rounded-lg border border-gray-300 bg-gray-100 px-3 py-2.5 text-sm text-gray-500"
-          />
-
-          <p class="mt-1 text-xs text-gray-500">
-            Username tidak dapat diubah.
-          </p>
-        </div>
-
-        <div>
-          <label
-            for="name"
-            class="block text-sm font-medium text-gray-700"
-          >
-            Nama
-          </label>
-
-          <input
-            id="name"
-            v-model="name"
-            type="text"
-            autocomplete="name"
-            :aria-invalid="Boolean(nameError)"
-            :aria-describedby="
-              nameError ? 'name-error' : undefined
-            "
-            class="mt-1 block w-full rounded-lg border px-3 py-2.5 text-sm outline-none focus:border-gray-500 focus:ring-2 focus:ring-gray-200"
-            :class="
-              nameError
-                ? 'border-red-400'
-                : 'border-gray-300'
-            "
-          />
-
-          <p
-            v-if="nameError"
-            id="name-error"
-            class="mt-1 text-sm text-red-600"
-          >
-            {{ nameError }}
-          </p>
-        </div>
-
-        <div>
-          <label
-            for="email"
-            class="block text-sm font-medium text-gray-700"
-          >
-            Email
-          </label>
-
-          <input
-            id="email"
-            v-model="email"
-            type="email"
-            autocomplete="email"
-            :aria-invalid="Boolean(emailError)"
-            :aria-describedby="
-              emailError ? 'email-error' : undefined
-            "
-            class="mt-1 block w-full rounded-lg border px-3 py-2.5 text-sm outline-none focus:border-gray-500 focus:ring-2 focus:ring-gray-200"
-            :class="
-              emailError
-                ? 'border-red-400'
-                : 'border-gray-300'
-            "
-          />
-
-          <p
-            v-if="emailError"
-            id="email-error"
-            class="mt-1 text-sm text-red-600"
-          >
-            {{ emailError }}
-          </p>
-        </div>
-
-        <div>
-          <label
-            for="role"
-            class="block text-sm font-medium text-gray-700"
-          >
-            Role
-          </label>
-
-          <select
-            id="role"
-            v-model="role"
-            :aria-invalid="Boolean(roleError)"
-            :aria-describedby="
-              roleError ? 'role-error' : undefined
-            "
-            class="mt-1 block w-full rounded-lg border px-3 py-2.5 text-sm outline-none focus:border-gray-500 focus:ring-2 focus:ring-gray-200"
-            :class="
-              roleError
-                ? 'border-red-400'
-                : 'border-gray-300'
-            "
-          >
-            <option value="admin">Admin</option>
-            <option value="kasir">Kasir</option>
-            <option value="pengurus">Pengurus</option>
-            <option value="anggota">Anggota</option>
-          </select>
-
-          <p
-            v-if="roleError"
-            id="role-error"
-            class="mt-1 text-sm text-red-600"
-          >
-            {{ roleError }}
-          </p>
-        </div>
-
-        <div>
-          <label
-            for="is-active"
-            class="flex cursor-pointer items-center gap-3"
-          >
-            <input
-              id="is-active"
-              v-model="isActive"
-              type="checkbox"
-              class="h-4 w-4 rounded border-gray-300"
-            />
-
-            <span class="text-sm font-medium text-gray-700">
-              Pengguna aktif
-            </span>
-          </label>
-
-          <p class="mt-1 text-xs text-gray-500">
-            Pengguna yang tidak aktif tidak dapat login.
-          </p>
-        </div>
-      </div>
-
-      <div class="mt-8 flex justify-end gap-3 border-t pt-6">
+      <h2 class="text-lg font-semibold text-[#17201C]">Data pengguna gagal dimuat</h2>
+      <p class="mx-auto mt-1 max-w-md text-sm leading-5 text-[#46514B]">
+        {{ loadError }} Tidak ada perubahan pada data pengguna. Periksa koneksi lalu coba lagi, atau
+        kembali ke daftar pengguna.
+      </p>
+      <div class="mt-5 flex flex-col items-center justify-center gap-3 sm:flex-row">
         <button
           type="button"
-          class="rounded-lg border px-4 py-2.5 text-sm font-medium hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-400 disabled:cursor-not-allowed disabled:opacity-60"
-          :disabled="isSaving"
+          class="inline-flex h-10 items-center justify-center rounded-lg bg-[#176B4D] px-4 text-sm font-medium text-white transition hover:bg-[#1F805D] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#176B4D]"
+          @click="loadUser"
+        >
+          Muat ulang
+        </button>
+        <button
+          type="button"
+          class="inline-flex h-10 items-center justify-center rounded-lg border border-[#D6DDD9] bg-white px-4 text-sm font-medium text-[#17201C] transition hover:bg-[#F1F4F2] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#176B4D]"
           @click="handleCancel"
         >
-          Batal
-        </button>
-
-        <button
-          type="submit"
-          class="rounded-lg bg-gray-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-gray-400 disabled:cursor-not-allowed disabled:opacity-60"
-          :disabled="isSaving"
-        >
-          {{ isSaving ? 'Menyimpan...' : 'Simpan perubahan' }}
+          Kembali ke Daftar Pengguna
         </button>
       </div>
+    </div>
+
+    <!-- Form -->
+    <form v-else novalidate @submit.prevent="handleSubmit">
+      <div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+        <!-- Main form -->
+        <div class="space-y-6">
+          <!-- Section 1 -->
+          <fieldset class="rounded-lg border border-[#D6DDD9] bg-white p-5 sm:p-6">
+            <legend class="sr-only">Informasi akun</legend>
+            <h2 class="text-lg font-semibold leading-[26px] text-[#17201C]">1. Informasi akun</h2>
+            <p class="mt-0.5 text-[13px] leading-[18px] text-[#6B756F]">
+              Identitas pengguna yang dipakai untuk masuk dan dihubungi.
+            </p>
+
+            <div class="mt-4 space-y-5">
+              <!-- Username (read-only) -->
+              <div>
+                <label for="username" class="mb-1.5 block text-xs font-medium leading-4 text-[#46514B]">
+                  Username
+                </label>
+                <input
+                  id="username"
+                  :value="username"
+                  type="text"
+                  readonly
+                  aria-readonly="true"
+                  aria-describedby="username-hint"
+                  class="h-10 w-full cursor-not-allowed rounded-lg border border-[#E6EBE8] bg-[#F1F4F2] px-3 text-sm text-[#6B756F] focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-[#176B4D]"
+                />
+                <p id="username-hint" class="mt-1.5 text-xs leading-4 text-[#6B756F]">
+                  Username tidak dapat diubah agar riwayat aktivitas pengguna tetap konsisten.
+                </p>
+              </div>
+
+              <!-- Nama -->
+              <div>
+                <label for="name" class="mb-1.5 block text-xs font-medium leading-4 text-[#46514B]">
+                  Nama lengkap <span class="text-[#C0392B]" aria-hidden="true">*</span>
+                  <span class="sr-only">(wajib)</span>
+                </label>
+                <input
+                  id="name"
+                  v-model="name"
+                  type="text"
+                  autocomplete="name"
+                  :aria-invalid="Boolean(errors.name)"
+                  :aria-describedby="errors.name ? 'name-error' : undefined"
+                  class="h-10 w-full rounded-lg border bg-white px-3 text-sm text-[#17201C] focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-[#176B4D]"
+                  :class="inputClass(!!errors.name)"
+                />
+                <p v-if="errors.name" id="name-error" role="alert" class="mt-1.5 text-xs leading-4 text-[#C0392B]">
+                  {{ errors.name }}
+                </p>
+              </div>
+
+              <!-- Email -->
+              <div>
+                <label for="email" class="mb-1.5 block text-xs font-medium leading-4 text-[#46514B]">
+                  Email <span class="text-[#C0392B]" aria-hidden="true">*</span>
+                  <span class="sr-only">(wajib)</span>
+                </label>
+                <input
+                  id="email"
+                  v-model="email"
+                  type="email"
+                  autocomplete="email"
+                  placeholder="nama@koperasi.id"
+                  :aria-invalid="Boolean(errors.email)"
+                  :aria-describedby="errors.email ? 'email-error' : undefined"
+                  class="h-10 w-full rounded-lg border bg-white px-3 text-sm text-[#17201C] placeholder:text-[#6B756F] focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-[#176B4D]"
+                  :class="inputClass(!!errors.email)"
+                />
+                <p v-if="errors.email" id="email-error" role="alert" class="mt-1.5 text-xs leading-4 text-[#C0392B]">
+                  {{ errors.email }}
+                </p>
+              </div>
+            </div>
+          </fieldset>
+
+          <!-- Section 2 -->
+          <fieldset class="rounded-lg border border-[#D6DDD9] bg-white p-5 sm:p-6">
+            <legend class="sr-only">Akses dan status</legend>
+            <h2 class="text-lg font-semibold leading-[26px] text-[#17201C]">2. Akses dan status</h2>
+            <p class="mt-0.5 text-[13px] leading-[18px] text-[#6B756F]">
+              Role menentukan hak akses. Status menentukan apakah pengguna bisa masuk.
+            </p>
+
+            <div class="mt-4 space-y-5">
+              <!-- Role -->
+              <div>
+                <label for="role" class="mb-1.5 block text-xs font-medium leading-4 text-[#46514B]">
+                  Role <span class="text-[#C0392B]" aria-hidden="true">*</span>
+                  <span class="sr-only">(wajib)</span>
+                </label>
+                <select
+                  id="role"
+                  v-model="role"
+                  :aria-invalid="Boolean(errors.role)"
+                  :aria-describedby="errors.role ? 'role-error' : 'role-hint'"
+                  class="h-10 w-full rounded-lg border bg-white px-3 text-sm text-[#17201C] focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-[#176B4D] sm:max-w-xs"
+                  :class="inputClass(!!errors.role)"
+                >
+                  <option v-for="option in roleOptions" :key="option.value" :value="option.value">
+                    {{ option.label }}
+                  </option>
+                </select>
+                <p v-if="errors.role" id="role-error" role="alert" class="mt-1.5 text-xs leading-4 text-[#C0392B]">
+                  {{ errors.role }}
+                </p>
+                <p v-else id="role-hint" class="mt-1.5 text-xs leading-4 text-[#6B756F]">
+                  Ringkasan hak akses role terpilih tampil di panel samping.
+                </p>
+              </div>
+
+              <!-- Status -->
+              <div>
+                <p id="active-label" class="mb-1.5 text-xs font-medium leading-4 text-[#46514B]">
+                  Status pengguna
+                </p>
+
+                <div class="flex items-center gap-3">
+                  <button
+                    id="is-active"
+                    type="button"
+                    role="switch"
+                    :aria-checked="isActive"
+                    aria-labelledby="active-label active-state"
+                    aria-describedby="active-hint"
+                    class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#176B4D]"
+                    :class="isActive ? 'bg-[#176B4D]' : 'bg-[#6B756F]'"
+                    @click="toggleActive"
+                  >
+                    <span
+                      class="inline-block h-5 w-5 rounded-full bg-white shadow-sm transition-transform"
+                      :class="isActive ? 'translate-x-[22px]' : 'translate-x-0.5'"
+                      aria-hidden="true"
+                    />
+                  </button>
+
+                  <span id="active-state" class="text-sm font-medium text-[#17201C]">
+                    {{ isActive ? 'Aktif' : 'Nonaktif' }}
+                  </span>
+                </div>
+
+                <p id="active-hint" class="mt-1.5 text-xs leading-4 text-[#6B756F]">
+                  Pengguna nonaktif tidak dapat login. Akun tidak dihapus, sehingga riwayat
+                  aktivitasnya tetap tersimpan dan dapat diaktifkan kembali.
+                </p>
+
+                <p
+                  v-if="isDeactivating"
+                  class="mt-3 rounded-lg border border-[#EBD5A6] bg-[#FBF3E2] px-3 py-2.5 text-[13px] leading-[18px] text-[#6B4A0F]"
+                  role="status"
+                >
+                  Pengguna akan dinonaktifkan setelah perubahan disimpan dan tidak bisa masuk lagi.
+                </p>
+                <p
+                  v-else-if="isReactivating"
+                  class="mt-3 rounded-lg border border-[#B9DFC9] bg-[#E7F4EC] px-3 py-2.5 text-[13px] leading-[18px] text-[#0F5C33]"
+                  role="status"
+                >
+                  Pengguna akan bisa masuk kembali setelah perubahan disimpan.
+                </p>
+              </div>
+            </div>
+          </fieldset>
+        </div>
+
+        <!-- Context / summary -->
+        <aside class="space-y-6 lg:sticky lg:top-6 lg:self-start" aria-label="Ringkasan perubahan pengguna">
+          <div class="rounded-lg border border-[#D6DDD9] bg-white p-5 sm:p-6">
+            <h2 class="text-lg font-semibold leading-[26px] text-[#17201C]">Perubahan</h2>
+
+            <p v-if="!isDirty" class="mt-3 text-sm leading-5 text-[#6B756F]" role="status">
+              Belum ada perubahan. Ubah salah satu field untuk mengaktifkan tombol simpan.
+            </p>
+
+            <dl v-else class="mt-3 divide-y divide-[#E6EBE8] rounded-lg border border-[#E6EBE8] bg-[#F8FAF9]" role="status">
+              <div v-for="change in changes" :key="change.key" class="px-4 py-3">
+                <dt class="text-xs font-medium text-[#6B756F]">{{ change.label }}</dt>
+                <dd class="mt-0.5 break-words text-[13px] leading-[18px] text-[#17201C]">
+                  <span class="text-[#6B756F] line-through decoration-[#6B756F]">{{ change.from }}</span>
+                  <span class="mx-1.5" aria-hidden="true">→</span>
+                  <span class="sr-only"> menjadi </span>
+                  <span class="font-semibold">{{ change.to }}</span>
+                </dd>
+              </div>
+            </dl>
+          </div>
+
+          <div class="rounded-lg border border-[#D6DDD9] bg-white p-5 sm:p-6">
+            <h2 class="text-lg font-semibold leading-[26px] text-[#17201C]">Hak akses role</h2>
+
+            <div class="mt-3 flex items-center gap-2" role="status" aria-live="polite">
+              <span
+                class="inline-flex items-center rounded-full border border-[#B9DFC9] bg-[#E7F4EC] px-2.5 py-0.5 text-xs font-medium text-[#0F6B3A]"
+              >
+                {{ roleLabel }}
+              </span>
+              <span class="text-[13px] text-[#6B756F]">role yang dipilih</span>
+            </div>
+
+            <div v-if="role === 'kasir'" class="mt-4 space-y-4 text-[13px] leading-[18px]">
+              <div>
+                <p class="font-semibold text-[#17201C]">Dapat</p>
+                <ul class="mt-1.5 space-y-1.5">
+                  <li v-for="item in kasirCan" :key="item" class="flex items-start gap-2 text-[#17201C]">
+                    <span aria-hidden="true" class="mt-px font-bold text-[#16834B]">✓</span>
+                    <span><span class="sr-only">Dapat: </span>{{ item }}</span>
+                  </li>
+                </ul>
+              </div>
+              <div>
+                <p class="font-semibold text-[#17201C]">Tidak dapat</p>
+                <ul class="mt-1.5 space-y-1.5">
+                  <li v-for="item in kasirCannot" :key="item" class="flex items-start gap-2 text-[#46514B]">
+                    <span aria-hidden="true" class="mt-px font-bold text-[#6B756F]">✕</span>
+                    <span><span class="sr-only">Tidak dapat: </span>{{ item }}</span>
+                  </li>
+                </ul>
+              </div>
+            </div>
+
+            <p v-else class="mt-4 text-[13px] leading-[18px] text-[#46514B]">
+              Hak akses role {{ roleLabel }} mengikuti ketentuan role di PRD §3. Pembatasan akses
+              tetap diterapkan oleh sistem, bukan hanya oleh tampilan menu.
+            </p>
+          </div>
+
+          <div class="rounded-lg border border-[#D6DDD9] bg-white p-5 sm:p-6">
+            <h2 class="text-base font-semibold leading-6 text-[#17201C]">Status validasi</h2>
+            <ul class="mt-3 space-y-2">
+              <li
+                v-for="req in requirements"
+                :key="req.label"
+                class="flex items-start gap-2.5 text-[13px] leading-[18px]"
+                :class="req.ok ? 'text-[#17201C]' : 'text-[#6B756F]'"
+              >
+                <span
+                  aria-hidden="true"
+                  class="mt-px flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px] font-bold"
+                  :class="req.ok ? 'bg-[#16834B] text-white' : 'border border-[#D6DDD9] bg-white text-transparent'"
+                >✓</span>
+                <span>
+                  {{ req.label }}
+                  <span class="sr-only">— {{ req.ok ? 'terpenuhi' : 'belum terpenuhi' }}</span>
+                </span>
+              </li>
+            </ul>
+          </div>
+        </aside>
+      </div>
+
+      <!-- Sticky footer -->
+      <div
+        class="sticky bottom-0 z-10 -mx-4 mt-6 border-t border-[#D6DDD9] bg-white px-4 py-3 sm:mx-0 sm:rounded-lg sm:border sm:px-6 sm:py-4 sm:shadow-[0_1px_2px_rgba(18,55,42,.06)]"
+      >
+        <div class="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <button
+            type="button"
+            :disabled="isSaving"
+            class="inline-flex h-10 items-center justify-center rounded-lg border border-[#D6DDD9] bg-white px-4 text-sm font-medium text-[#17201C] transition hover:bg-[#F1F4F2] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#176B4D] disabled:cursor-not-allowed disabled:opacity-50"
+            @click="handleCancel"
+          >
+            Batal
+          </button>
+
+          <div class="flex flex-col-reverse items-stretch gap-3 sm:flex-row sm:items-center">
+            <p v-if="!isDirty" class="text-[13px] leading-[18px] text-[#6B756F]">
+              Belum ada perubahan untuk disimpan.
+            </p>
+            <p v-else class="text-[13px] leading-[18px] tabular-nums text-[#46514B]">
+              {{ changes.length }} perubahan belum disimpan
+            </p>
+
+            <button
+              ref="submitButtonRef"
+              type="submit"
+              :disabled="isSaving || !isDirty"
+              :aria-busy="isSaving"
+              class="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[#176B4D] px-5 text-sm font-medium text-white transition hover:bg-[#1F805D] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#176B4D] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <span
+                v-if="isSaving"
+                class="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white"
+                aria-hidden="true"
+              />
+              {{ isSaving ? 'Menyimpan…' : needsConfirmation ? 'Tinjau Perubahan' : 'Simpan Perubahan' }}
+            </button>
+          </div>
+        </div>
+      </div>
     </form>
+
+    <!-- Confirmation dialog -->
+    <div
+      v-if="showConfirmation"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-[#12372A]/50 p-4"
+      @click.self="closeConfirmation"
+    >
+      <div
+        ref="dialogRef"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="confirmation-title"
+        aria-describedby="confirmation-desc"
+        class="w-full max-w-md rounded-xl bg-white p-6 shadow-[0_12px_32px_rgba(18,55,42,.12)]"
+        @keydown="onDialogKeydown"
+      >
+        <h2 id="confirmation-title" class="text-lg font-semibold leading-[26px] text-[#17201C]">
+          {{ isDeactivating ? 'Nonaktifkan pengguna?' : 'Konfirmasi perubahan role' }}
+        </h2>
+
+        <p id="confirmation-desc" class="mt-1 text-sm leading-5 text-[#46514B]">
+          Periksa perubahan berikut untuk
+          <span class="font-medium text-[#17201C]">{{ original?.name }}</span>
+          (@{{ username }}) sebelum disimpan.
+        </p>
+
+        <dl class="mt-4 divide-y divide-[#E6EBE8] rounded-lg border border-[#E6EBE8] bg-[#F8FAF9] text-sm">
+          <div v-for="change in changes" :key="change.key" class="flex items-baseline justify-between gap-3 px-4 py-2.5">
+            <dt class="text-[#46514B]">{{ change.label }}</dt>
+            <dd class="break-words text-right text-[#17201C]">
+              <span class="text-[#6B756F]">{{ change.from }}</span>
+              <span class="mx-1" aria-hidden="true">→</span>
+              <span class="sr-only"> menjadi </span>
+              <span class="font-semibold">{{ change.to }}</span>
+            </dd>
+          </div>
+        </dl>
+
+        <div class="mt-3 space-y-2">
+          <p
+            v-if="isDeactivating"
+            class="rounded-lg border border-[#F0C4BF] bg-[#FBEAE8] px-4 py-3 text-[13px] leading-[18px] text-[#8E271C]"
+          >
+            Pengguna tidak akan bisa login. Akun tidak dihapus dan dapat diaktifkan kembali kapan saja.
+          </p>
+          <p
+            v-if="isRoleChanging"
+            class="rounded-lg border border-[#EBD5A6] bg-[#FBF3E2] px-4 py-3 text-[13px] leading-[18px] text-[#6B4A0F]"
+          >
+            Hak akses pengguna akan berubah mengikuti role {{ roleLabel }}.
+          </p>
+        </div>
+
+        <div class="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+          <button
+            ref="cancelButtonRef"
+            type="button"
+            :disabled="isSaving"
+            class="inline-flex h-10 items-center justify-center rounded-lg border border-[#D6DDD9] bg-white px-4 text-sm font-medium text-[#17201C] transition hover:bg-[#F1F4F2] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#176B4D] disabled:cursor-not-allowed disabled:opacity-50"
+            @click="closeConfirmation"
+          >
+            Batal
+          </button>
+
+          <button
+            type="button"
+            :disabled="isSaving"
+            :aria-busy="isSaving"
+            class="inline-flex h-10 items-center justify-center gap-2 rounded-lg px-4 text-sm font-medium text-white transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#176B4D] disabled:cursor-not-allowed disabled:opacity-60"
+            :class="isDeactivating ? 'bg-[#C0392B] hover:bg-[#A32F23]' : 'bg-[#176B4D] hover:bg-[#1F805D]'"
+            @click="saveChanges"
+          >
+            <span
+              v-if="isSaving"
+              class="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white"
+              aria-hidden="true"
+            />
+            {{ isSaving ? 'Menyimpan…' : isDeactivating ? 'Nonaktifkan dan Simpan' : 'Simpan Perubahan' }}
+          </button>
+        </div>
+      </div>
+    </div>
   </main>
 </template>
