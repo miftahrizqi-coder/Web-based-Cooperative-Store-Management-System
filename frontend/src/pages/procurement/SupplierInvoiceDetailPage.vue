@@ -61,13 +61,13 @@ const paymentStatusClass = (
     string
   > = {
     UNPAID:
-      'bg-amber-50 text-amber-700 ring-1 ring-amber-200',
+      'border-[#C47A00]/20 bg-[#FFF8E8] text-[#8A5A00]',
     PARTIALLY_PAID:
-      'bg-blue-50 text-blue-700 ring-1 ring-blue-200',
+      'border-[#2874A6]/20 bg-[#F3F8FB] text-[#2874A6]',
     PAID:
-      'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200',
+      'border-[#176B4D]/20 bg-[#F0F8F5] text-[#176B4D]',
     OVERDUE:
-      'bg-red-50 text-red-700 ring-1 ring-red-200',
+      'border-[#C0392B]/20 bg-[#FEF4F3] text-[#C0392B]',
   }
 
   return classes[status]
@@ -136,202 +136,307 @@ onMounted(loadInvoice)
 </script>
 
 <template>
-  <section class="space-y-6">
-    <div
-      class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"
+  <section
+    class="mx-auto w-full max-w-7xl space-y-6"
+  >
+    <!-- Breadcrumb -->
+    <nav
+      aria-label="Breadcrumb"
+      class="text-sm text-[#6B756F]"
+    >
+      <ol class="flex flex-wrap items-center gap-2">
+        <li>
+          <span>Procurement</span>
+        </li>
+
+        <li aria-hidden="true">
+          /
+        </li>
+
+        <li>
+          <button
+            type="button"
+            class="font-medium text-[#46514B] underline-offset-2 hover:text-[#176B4D] hover:underline focus:outline-none focus:ring-2 focus:ring-[#176B4D]/30"
+            @click="backToList"
+          >
+            Supplier Invoice
+          </button>
+        </li>
+
+        <li aria-hidden="true">
+          /
+        </li>
+
+        <li
+          class="font-medium text-[#17201C]"
+          aria-current="page"
+        >
+          Detail
+        </li>
+      </ol>
+    </nav>
+
+    <!-- Page Header -->
+    <header
+      class="flex flex-col gap-4 border-b border-[#D6DDD9] pb-5 sm:flex-row sm:items-end sm:justify-between"
     >
       <div>
         <p
-          class="text-sm font-medium text-emerald-700"
+          class="text-sm font-semibold uppercase tracking-wide text-[#176B4D]"
         >
           Procurement
         </p>
 
         <h1
-          class="mt-1 text-2xl font-semibold text-slate-900"
+          class="mt-1 text-2xl font-semibold tracking-tight text-[#17201C] sm:text-3xl"
         >
           Detail Supplier Invoice
         </h1>
 
-        <p class="mt-1 text-sm text-slate-500">
-          Detail invoice dan referensi transaksi supplier.
+        <p
+          class="mt-2 max-w-2xl text-sm leading-6 text-[#6B756F]"
+        >
+          Detail invoice, status pembayaran, referensi transaksi,
+          dan ringkasan nilai invoice supplier.
         </p>
       </div>
 
       <button
         type="button"
-        class="min-h-11 rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+        class="inline-flex min-h-11 items-center justify-center rounded-lg border border-[#D6DDD9] bg-white px-4 py-2 text-sm font-semibold text-[#46514B] transition hover:bg-[#F8FAF9] focus:outline-none focus:ring-2 focus:ring-[#176B4D]/30"
         @click="backToList"
       >
         Kembali
       </button>
-    </div>
+    </header>
 
+    <!-- Loading -->
     <div
       v-if="isLoading"
       class="space-y-6"
+      aria-live="polite"
+      aria-busy="true"
     >
-      <div
-        class="animate-pulse rounded-xl border border-slate-200 bg-white p-6"
+      <section
+        class="overflow-hidden rounded-xl border border-[#D6DDD9] bg-white"
       >
         <div
-          class="h-6 w-56 rounded bg-slate-200"
+          class="border-b border-[#D6DDD9] px-5 py-4 sm:px-6"
+        >
+          <div
+            class="h-5 w-32 animate-pulse rounded bg-[#E7ECE9]"
+          />
+
+          <div
+            class="mt-3 h-7 w-64 max-w-full animate-pulse rounded bg-[#F1F4F2]"
+          />
+        </div>
+
+        <div
+          class="grid gap-5 p-5 sm:grid-cols-2 lg:grid-cols-4 sm:p-6"
+        >
+          <div
+            v-for="item in 4"
+            :key="item"
+            class="space-y-2"
+          >
+            <div
+              class="h-3 w-20 animate-pulse rounded bg-[#E7ECE9]"
+            />
+
+            <div
+              class="h-5 w-32 animate-pulse rounded bg-[#F1F4F2]"
+            />
+          </div>
+        </div>
+      </section>
+
+      <section
+        class="overflow-hidden rounded-xl border border-[#D6DDD9] bg-white"
+      >
+        <div
+          class="border-b border-[#D6DDD9] px-5 py-4 sm:px-6"
+        >
+          <div
+            class="h-5 w-44 animate-pulse rounded bg-[#E7ECE9]"
+          />
+        </div>
+
+        <div
+          class="grid gap-5 p-5 md:grid-cols-2 sm:p-6"
+        >
+          <div
+            v-for="item in 2"
+            :key="item"
+            class="h-32 animate-pulse rounded-lg bg-[#F1F4F2]"
+          />
+        </div>
+      </section>
+
+      <section
+        class="overflow-hidden rounded-xl border border-[#D6DDD9] bg-white p-5 sm:p-6"
+      >
+        <div
+          class="h-5 w-40 animate-pulse rounded bg-[#E7ECE9]"
         />
 
         <div
-          class="mt-5 grid gap-4 sm:grid-cols-2"
+          class="ml-auto mt-6 max-w-md space-y-4"
         >
           <div
-            class="h-12 rounded bg-slate-100"
-          />
-
-          <div
-            class="h-12 rounded bg-slate-100"
-          />
-
-          <div
-            class="h-12 rounded bg-slate-100"
-          />
-
-          <div
-            class="h-12 rounded bg-slate-100"
+            v-for="item in 4"
+            :key="item"
+            class="h-5 animate-pulse rounded bg-[#F1F4F2]"
           />
         </div>
-      </div>
-
-      <div
-        class="animate-pulse rounded-xl border border-slate-200 bg-white p-6"
-      >
-        <div
-          class="h-5 w-40 rounded bg-slate-200"
-        />
-
-        <div
-          class="mt-5 space-y-3"
-        >
-          <div
-            class="h-5 rounded bg-slate-100"
-          />
-
-          <div
-            class="h-5 rounded bg-slate-100"
-          />
-
-          <div
-            class="h-5 rounded bg-slate-100"
-          />
-        </div>
-      </div>
+      </section>
     </div>
 
+    <!-- Error -->
     <div
       v-else-if="errorMessage"
-      class="rounded-xl border border-red-200 bg-red-50 p-6"
+      class="rounded-xl border border-[#C0392B]/25 bg-[#FEF4F3] p-5 sm:p-6"
+      role="alert"
     >
-      <h2
-        class="font-semibold text-red-800"
-      >
-        Gagal memuat supplier invoice
-      </h2>
+      <div class="flex gap-3">
+        <div
+          class="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#C0392B]/10 text-[#C0392B]"
+          aria-hidden="true"
+        >
+          !
+        </div>
 
-      <p
-        class="mt-1 text-sm text-red-700"
-      >
-        {{ errorMessage }}
-      </p>
+        <div class="min-w-0">
+          <h2
+            class="font-semibold text-[#8E2B22]"
+          >
+            Gagal memuat supplier invoice
+          </h2>
 
-      <button
-        type="button"
-        class="mt-4 min-h-11 rounded-lg bg-red-700 px-4 py-2 text-sm font-medium text-white hover:bg-red-800"
-        @click="loadInvoice"
-      >
-        Coba Lagi
-      </button>
+          <p
+            class="mt-1 text-sm leading-6 text-[#A33A2E]"
+          >
+            {{ errorMessage }}
+          </p>
+
+          <div class="mt-4 flex flex-wrap gap-3">
+            <button
+              type="button"
+              class="inline-flex min-h-11 items-center justify-center rounded-lg bg-[#C0392B] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#A93226] focus:outline-none focus:ring-2 focus:ring-[#C0392B]/30"
+              @click="loadInvoice"
+            >
+              Coba Lagi
+            </button>
+
+            <button
+              type="button"
+              class="inline-flex min-h-11 items-center justify-center rounded-lg border border-[#C0392B]/20 bg-white px-4 py-2 text-sm font-semibold text-[#8E2B22] transition hover:bg-[#FEF4F3] focus:outline-none focus:ring-2 focus:ring-[#C0392B]/30"
+              @click="backToList"
+            >
+              Kembali
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
 
+    <!-- Detail -->
     <template v-else-if="invoice">
-      <div
-        class="rounded-xl border border-slate-200 bg-white p-6"
+      <!-- Status + Primary Information -->
+      <section
+        class="overflow-hidden rounded-xl border border-[#D6DDD9] bg-white"
       >
         <div
-          class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"
+          class="border-b border-[#D6DDD9] px-5 py-5 sm:px-6"
+        >
+          <div
+            class="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between"
+          >
+            <div class="min-w-0">
+              <p
+                class="text-xs font-semibold uppercase tracking-wide text-[#6B756F]"
+              >
+                Nomor Invoice
+              </p>
+
+              <h2
+                class="mt-1 break-all text-xl font-semibold tracking-tight text-[#17201C] sm:text-2xl"
+              >
+                {{ invoice.invoiceNumber }}
+              </h2>
+            </div>
+
+            <span
+              class="inline-flex w-fit shrink-0 items-center rounded-full border px-3 py-1.5 text-sm font-semibold"
+              :class="
+                paymentStatusClass(
+                  invoice.paymentStatus,
+                )
+              "
+            >
+              {{
+                paymentStatusLabel(
+                  invoice.paymentStatus,
+                )
+              }}
+            </span>
+          </div>
+        </div>
+
+        <div
+          class="grid gap-x-6 gap-y-5 p-5 sm:grid-cols-2 lg:grid-cols-4 sm:p-6"
         >
           <div>
             <p
-              class="text-sm text-slate-500"
+              class="text-xs font-medium uppercase tracking-wide text-[#6B756F]"
             >
-              Nomor Invoice
-            </p>
-
-            <h2
-              class="mt-1 text-xl font-semibold text-slate-900"
-            >
-              {{ invoice.invoiceNumber }}
-            </h2>
-          </div>
-
-          <span
-            class="inline-flex w-fit rounded-full px-3 py-1.5 text-sm font-medium"
-            :class="
-              paymentStatusClass(
-                invoice.paymentStatus,
-              )
-            "
-          >
-            {{
-              paymentStatusLabel(
-                invoice.paymentStatus,
-              )
-            }}
-          </span>
-        </div>
-
-        <div
-          class="mt-6 grid gap-5 sm:grid-cols-2 lg:grid-cols-4"
-        >
-          <div>
-            <p class="text-xs text-slate-500">
               Supplier
             </p>
 
             <p
-              class="mt-1 font-medium text-slate-900"
+              class="mt-1 break-all font-medium text-[#17201C]"
             >
               {{ invoice.supplierId }}
             </p>
           </div>
 
           <div>
-            <p class="text-xs text-slate-500">
+            <p
+              class="text-xs font-medium uppercase tracking-wide text-[#6B756F]"
+            >
               Tanggal Invoice
             </p>
 
             <p
-              class="mt-1 font-medium text-slate-900"
+              class="mt-1 font-medium text-[#17201C]"
             >
               {{ formatDate(invoice.invoiceDate) }}
             </p>
           </div>
 
           <div>
-            <p class="text-xs text-slate-500">
+            <p
+              class="text-xs font-medium uppercase tracking-wide text-[#6B756F]"
+            >
               Jatuh Tempo
             </p>
 
             <p
-              class="mt-1 font-medium text-slate-900"
+              class="mt-1 font-medium text-[#17201C]"
             >
               {{ formatDate(invoice.dueDate) }}
             </p>
           </div>
 
           <div>
-            <p class="text-xs text-slate-500">
+            <p
+              class="text-xs font-medium uppercase tracking-wide text-[#6B756F]"
+            >
               Status Pembayaran
             </p>
 
             <p
-              class="mt-1 font-medium text-slate-900"
+              class="mt-1 font-medium text-[#17201C]"
             >
               {{
                 paymentStatusLabel(
@@ -341,143 +446,278 @@ onMounted(loadInvoice)
             </p>
           </div>
         </div>
-      </div>
+      </section>
 
-      <div
-        class="rounded-xl border border-slate-200 bg-white p-6"
+      <!-- Financial Summary -->
+      <section
+        class="overflow-hidden rounded-xl border border-[#D6DDD9] bg-white"
       >
-        <h2
-          class="text-lg font-semibold text-slate-900"
+        <div
+          class="border-b border-[#D6DDD9] px-5 py-4 sm:px-6"
         >
-          Referensi Transaksi
-        </h2>
+          <h2
+            class="text-base font-semibold text-[#17201C]"
+          >
+            Ringkasan Invoice
+          </h2>
+
+          <p
+            class="mt-1 text-sm text-[#6B756F]"
+          >
+            Rincian nilai finansial supplier invoice.
+          </p>
+        </div>
+
+        <div class="p-5 sm:p-6">
+          <dl class="ml-auto max-w-lg space-y-4">
+            <div
+              class="flex items-center justify-between gap-6 text-sm"
+            >
+              <dt class="text-[#6B756F]">
+                Subtotal
+              </dt>
+
+              <dd
+                class="font-medium tabular-nums text-[#17201C]"
+              >
+                {{ formatCurrency(invoice.subtotal) }}
+              </dd>
+            </div>
+
+            <div
+              class="flex items-center justify-between gap-6 text-sm"
+            >
+              <dt class="text-[#6B756F]">
+                Tax
+              </dt>
+
+              <dd
+                class="font-medium tabular-nums text-[#17201C]"
+              >
+                {{ formatCurrency(invoice.tax) }}
+              </dd>
+            </div>
+
+            <div
+              class="flex items-center justify-between gap-6 text-sm"
+            >
+              <dt class="text-[#6B756F]">
+                Shipping Cost
+              </dt>
+
+              <dd
+                class="font-medium tabular-nums text-[#17201C]"
+              >
+                {{ formatCurrency(invoice.shipping) }}
+              </dd>
+            </div>
+
+            <div
+              class="border-t border-[#D6DDD9] pt-4"
+            >
+              <div
+                class="flex items-end justify-between gap-6"
+              >
+                <dt
+                  class="font-semibold text-[#17201C]"
+                >
+                  Total Invoice
+                </dt>
+
+                <dd
+                  class="text-xl font-bold tabular-nums text-[#176B4D] sm:text-2xl"
+                >
+                  {{ formatCurrency(invoice.total) }}
+                </dd>
+              </div>
+            </div>
+          </dl>
+        </div>
+      </section>
+
+      <!-- Transaction References -->
+      <section
+        class="overflow-hidden rounded-xl border border-[#D6DDD9] bg-white"
+      >
+        <div
+          class="border-b border-[#D6DDD9] px-5 py-4 sm:px-6"
+        >
+          <h2
+            class="text-base font-semibold text-[#17201C]"
+          >
+            Referensi Transaksi
+          </h2>
+
+          <p
+            class="mt-1 text-sm text-[#6B756F]"
+          >
+            Dokumen transaksi yang menjadi dasar supplier invoice.
+          </p>
+        </div>
 
         <div
-          class="mt-5 grid gap-4 md:grid-cols-2"
+          class="grid gap-5 p-5 md:grid-cols-2 sm:p-6"
         >
-          <div
-            class="rounded-lg border border-slate-200 p-4"
+          <!-- Purchase Order -->
+          <article
+            class="rounded-lg border border-[#D6DDD9] bg-[#F8FAF9] p-5"
           >
-            <p class="text-xs text-slate-500">
-              Purchase Order
-            </p>
-
-            <p
-              class="mt-1 break-all font-medium text-slate-900"
+            <div
+              class="flex items-start justify-between gap-4"
             >
-              {{ invoice.purchaseOrderId }}
-            </p>
+              <div>
+                <p
+                  class="text-xs font-semibold uppercase tracking-wide text-[#6B756F]"
+                >
+                  Purchase Order
+                </p>
+
+                <p
+                  class="mt-2 break-all font-mono text-sm font-medium text-[#17201C]"
+                >
+                  {{ invoice.purchaseOrderId }}
+                </p>
+              </div>
+
+              <span
+                class="shrink-0 rounded-full border border-[#D6DDD9] bg-white px-2.5 py-1 text-xs font-medium text-[#46514B]"
+              >
+                PO
+              </span>
+            </div>
 
             <button
               type="button"
-              class="mt-3 min-h-10 rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              class="mt-5 inline-flex min-h-10 items-center justify-center rounded-lg border border-[#D6DDD9] bg-white px-3.5 py-2 text-sm font-semibold text-[#46514B] transition hover:bg-[#F8FAF9] hover:text-[#176B4D] focus:outline-none focus:ring-2 focus:ring-[#176B4D]/30"
               @click="openPurchaseOrder"
             >
               Lihat Purchase Order
             </button>
-          </div>
+          </article>
 
-          <div
-            class="rounded-lg border border-slate-200 p-4"
+          <!-- Goods Receipt -->
+          <article
+            class="rounded-lg border border-[#D6DDD9] bg-[#F8FAF9] p-5"
           >
-            <p class="text-xs text-slate-500">
-              Goods Receipt
-            </p>
-
-            <p
-              class="mt-1 break-all font-medium text-slate-900"
+            <div
+              class="flex items-start justify-between gap-4"
             >
-              {{ invoice.receiptId }}
-            </p>
+              <div>
+                <p
+                  class="text-xs font-semibold uppercase tracking-wide text-[#6B756F]"
+                >
+                  Goods Receipt
+                </p>
+
+                <p
+                  class="mt-2 break-all font-mono text-sm font-medium text-[#17201C]"
+                >
+                  {{ invoice.receiptId }}
+                </p>
+              </div>
+
+              <span
+                class="shrink-0 rounded-full border border-[#D6DDD9] bg-white px-2.5 py-1 text-xs font-medium text-[#46514B]"
+              >
+                GR
+              </span>
+            </div>
 
             <button
               type="button"
-              class="mt-3 min-h-10 rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              class="mt-5 inline-flex min-h-10 items-center justify-center rounded-lg border border-[#D6DDD9] bg-white px-3.5 py-2 text-sm font-semibold text-[#46514B] transition hover:bg-[#F8FAF9] hover:text-[#176B4D] focus:outline-none focus:ring-2 focus:ring-[#176B4D]/30"
               @click="openGoodsReceipt"
             >
               Lihat Goods Receipt
             </button>
-          </div>
+          </article>
         </div>
-      </div>
+      </section>
 
-      <div
-        class="rounded-xl border border-slate-200 bg-white p-6"
+      <!-- Payment Status Information -->
+      <section
+        class="overflow-hidden rounded-xl border border-[#D6DDD9] bg-white"
       >
-        <h2
-          class="text-lg font-semibold text-slate-900"
-        >
-          Ringkasan Invoice
-        </h2>
-
         <div
-          class="mt-5 ml-auto max-w-md space-y-3"
+          class="border-b border-[#D6DDD9] px-5 py-4 sm:px-6"
         >
-          <div
-            class="flex items-center justify-between gap-4 text-sm"
+          <h2
+            class="text-base font-semibold text-[#17201C]"
           >
-            <span class="text-slate-500">
-              Subtotal
-            </span>
+            Status Pembayaran
+          </h2>
+        </div>
+
+        <div class="p-5 sm:p-6">
+          <div
+            class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
+          >
+            <div>
+              <p
+                class="text-sm text-[#6B756F]"
+              >
+                Status invoice saat ini
+              </p>
+
+              <p
+                class="mt-1 text-base font-semibold text-[#17201C]"
+              >
+                {{
+                  paymentStatusLabel(
+                    invoice.paymentStatus,
+                  )
+                }}
+              </p>
+            </div>
 
             <span
-              class="font-medium text-slate-900"
-            >
-              {{ formatCurrency(invoice.subtotal) }}
-            </span>
-          </div>
-
-          <div
-            class="flex items-center justify-between gap-4 text-sm"
-          >
-            <span class="text-slate-500">
-              Tax
-            </span>
-
-            <span
-              class="font-medium text-slate-900"
-            >
-              {{ formatCurrency(invoice.tax) }}
-            </span>
-          </div>
-
-          <div
-            class="flex items-center justify-between gap-4 text-sm"
-          >
-            <span class="text-slate-500">
-              Shipping Cost
-            </span>
-
-            <span
-              class="font-medium text-slate-900"
+              class="inline-flex w-fit items-center rounded-full border px-3 py-1.5 text-sm font-semibold"
+              :class="
+                paymentStatusClass(
+                  invoice.paymentStatus,
+                )
+              "
             >
               {{
-                formatCurrency(
-                  invoice.shipping,
+                paymentStatusLabel(
+                  invoice.paymentStatus,
                 )
               }}
             </span>
           </div>
+        </div>
+      </section>
 
-          <div
-            class="border-t border-slate-200 pt-4"
+      <!-- Bottom Actions -->
+      <div
+        class="flex flex-col-reverse gap-3 border-t border-[#D6DDD9] pt-5 sm:flex-row sm:justify-between"
+      >
+        <button
+          type="button"
+          class="inline-flex min-h-11 items-center justify-center rounded-lg border border-[#D6DDD9] bg-white px-5 py-2 text-sm font-semibold text-[#46514B] transition hover:bg-[#F8FAF9] focus:outline-none focus:ring-2 focus:ring-[#176B4D]/30"
+          @click="backToList"
+        >
+          Kembali ke Supplier Invoice
+        </button>
+
+        <div
+          class="flex flex-col gap-3 sm:flex-row"
+        >
+          <button
+            type="button"
+            class="inline-flex min-h-11 items-center justify-center rounded-lg border border-[#D6DDD9] bg-white px-5 py-2 text-sm font-semibold text-[#46514B] transition hover:bg-[#F8FAF9] focus:outline-none focus:ring-2 focus:ring-[#176B4D]/30"
+            @click="openGoodsReceipt"
           >
-            <div
-              class="flex items-center justify-between gap-4"
-            >
-              <span
-                class="font-semibold text-slate-900"
-              >
-                Total
-              </span>
+            Lihat Goods Receipt
+          </button>
 
-              <span
-                class="text-xl font-semibold text-slate-900"
-              >
-                {{ formatCurrency(invoice.total) }}
-              </span>
-            </div>
-          </div>
+          <button
+            type="button"
+            class="inline-flex min-h-11 items-center justify-center rounded-lg bg-[#176B4D] px-5 py-2 text-sm font-semibold text-white transition hover:bg-[#1F805D] focus:outline-none focus:ring-2 focus:ring-[#176B4D]/30 focus:ring-offset-2"
+            @click="openPurchaseOrder"
+          >
+            Lihat Purchase Order
+          </button>
         </div>
       </div>
     </template>

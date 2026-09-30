@@ -173,220 +173,317 @@ function cancel() {
 onMounted(loadData)
 </script>
 
+
 <template>
-  <section class="mx-auto max-w-3xl space-y-6">
-    <div>
+  <section class="mx-auto max-w-6xl space-y-6 px-4 py-5 sm:px-6 lg:px-8">
+    <nav aria-label="Breadcrumb" class="text-sm text-[#6B756F]">
       <button
         type="button"
-        class="text-sm font-medium text-slate-600 hover:text-slate-900"
+        class="font-medium transition hover:text-[#176B4D] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#176B4D] focus-visible:ring-offset-2"
+        @click="cancel"
+      >
+        Procurement
+      </button>
+      <span class="mx-2 text-[#A8B1AC]">/</span>
+      <span>Supplier Products</span>
+      <span class="mx-2 text-[#A8B1AC]">/</span>
+      <span class="text-[#46514B]">{{ isEdit ? 'Edit' : 'Tambah' }}</span>
+    </nav>
+
+    <header class="flex flex-col gap-4 border-b border-[#D6DDD9] pb-5 sm:flex-row sm:items-end sm:justify-between">
+      <div>
+        <p class="text-xs font-semibold uppercase tracking-[0.12em] text-[#176B4D]">
+          Procurement
+        </p>
+        <h1 class="mt-1 text-2xl font-semibold tracking-tight text-[#17201C] sm:text-3xl">
+          {{ isEdit ? 'Edit Produk Supplier' : 'Tambah Produk Supplier' }}
+        </h1>
+        <p class="mt-2 max-w-2xl text-sm leading-6 text-[#46514B]">
+          Hubungkan produk dengan supplier dan tentukan kondisi pembelian yang digunakan.
+        </p>
+      </div>
+
+      <button
+        type="button"
+        :disabled="saving"
+        class="inline-flex w-full items-center justify-center rounded-lg border border-[#D6DDD9] bg-white px-4 py-2.5 text-sm font-semibold text-[#46514B] transition hover:bg-[#F8FAF9] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#176B4D] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
         @click="cancel"
       >
         ← Kembali
       </button>
-
-      <h1 class="mt-3 text-2xl font-semibold text-slate-900">
-        {{ isEdit ? 'Edit Produk Supplier' : 'Tambah Produk Supplier' }}
-      </h1>
-
-      <p class="mt-1 text-sm text-slate-600">
-        Hubungkan produk dengan supplier dan tentukan kondisi pembeliannya.
-      </p>
-    </div>
+    </header>
 
     <div
       v-if="loading"
-      class="rounded-xl border border-slate-200 bg-white p-6"
+      class="rounded-xl border border-[#D6DDD9] bg-white p-6"
       aria-busy="true"
+      aria-label="Memuat formulir"
     >
-      <div class="space-y-4">
-        <div
-          v-for="n in 6"
-          :key="n"
-          class="h-10 animate-pulse rounded bg-slate-100"
-        />
+      <div class="grid gap-6 md:grid-cols-2">
+        <div v-for="n in 8" :key="n" class="space-y-2">
+          <div class="h-4 w-28 animate-pulse rounded bg-[#E8ECEA]" />
+          <div class="h-11 animate-pulse rounded-lg bg-[#F1F4F2]" />
+        </div>
       </div>
     </div>
 
     <form
       v-else
-      class="space-y-6 rounded-xl border border-slate-200 bg-white p-6 shadow-sm"
+      class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px]"
       @submit.prevent="save"
     >
-      <div
-        v-if="error"
-        class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700"
-        role="alert"
-      >
-        {{ error }}
-      </div>
+      <div class="rounded-xl border border-[#D6DDD9] bg-white">
+        <div
+          v-if="error"
+          class="m-5 rounded-lg border border-[#C0392B]/20 bg-[#FEF4F3] p-4 text-sm text-[#C0392B]"
+          role="alert"
+        >
+          <p class="font-semibold">Tidak dapat menyimpan data</p>
+          <p class="mt-1">{{ error }}</p>
+        </div>
 
-      <div class="grid gap-5 md:grid-cols-2">
-        <label class="block">
-          <span class="mb-1 block text-sm font-medium text-slate-700">
-            Produk *
-          </span>
+        <div class="p-5 sm:p-6">
+          <section>
+            <div class="border-b border-[#D6DDD9] pb-4">
+              <h2 class="text-base font-semibold text-[#17201C]">
+                Relasi Produk & Supplier
+              </h2>
+              <p class="mt-1 text-sm text-[#6B756F]">
+                Pilih produk dan supplier yang menjadi pasangan pembelian.
+              </p>
+            </div>
 
-          <select
-            v-model="productId"
-            :disabled="isEdit"
-            required
-            class="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100 disabled:bg-slate-100"
-          >
-            <option value="">Pilih produk</option>
+            <div class="mt-5 grid gap-5 md:grid-cols-2">
+              <label class="block">
+                <span class="mb-1.5 block text-sm font-semibold text-[#46514B]">
+                  Produk <span class="text-[#C0392B]">*</span>
+                </span>
 
-            <option
-              v-for="product in products"
-              :key="product.id"
-              :value="product.id"
+                <select
+                  v-model="productId"
+                  :disabled="isEdit"
+                  required
+                  class="w-full rounded-lg border border-[#C9D1CD] bg-white px-3 py-2.5 text-sm text-[#17201C] outline-none transition focus:border-[#176B4D] focus:ring-2 focus:ring-[#176B4D]/10 disabled:cursor-not-allowed disabled:bg-[#F1F4F2] disabled:text-[#6B756F]"
+                >
+                  <option value="">Pilih produk</option>
+                  <option
+                    v-for="product in products"
+                    :key="product.id"
+                    :value="product.id"
+                  >
+                    {{ product.name }} — {{ product.sku }}
+                  </option>
+                </select>
+
+                <span
+                  v-if="selectedProduct"
+                  class="mt-2 block text-xs text-[#6B756F]"
+                >
+                  SKU utama: <span class="font-medium text-[#46514B]">{{ selectedProduct.sku }}</span>
+                </span>
+              </label>
+
+              <label class="block">
+                <span class="mb-1.5 block text-sm font-semibold text-[#46514B]">
+                  Supplier <span class="text-[#C0392B]">*</span>
+                </span>
+
+                <select
+                  v-model="supplierId"
+                  :disabled="isEdit"
+                  required
+                  class="w-full rounded-lg border border-[#C9D1CD] bg-white px-3 py-2.5 text-sm text-[#17201C] outline-none transition focus:border-[#176B4D] focus:ring-2 focus:ring-[#176B4D]/10 disabled:cursor-not-allowed disabled:bg-[#F1F4F2] disabled:text-[#6B756F]"
+                >
+                  <option value="">Pilih supplier</option>
+                  <option
+                    v-for="supplier in suppliers"
+                    :key="supplier.id"
+                    :value="supplier.id"
+                  >
+                    {{ supplier.name }} — {{ supplier.supplierCode }}
+                  </option>
+                </select>
+
+                <span
+                  v-if="selectedSupplier"
+                  class="mt-2 block text-xs text-[#6B756F]"
+                >
+                  Kode supplier:
+                  <span class="font-medium text-[#46514B]">{{ selectedSupplier.supplierCode }}</span>
+                  <span class="mx-1">·</span>
+                  Status:
+                  <span class="font-medium text-[#46514B]">{{ selectedSupplier.status }}</span>
+                </span>
+              </label>
+            </div>
+          </section>
+
+          <section class="mt-8 border-t border-[#D6DDD9] pt-6">
+            <div class="border-b border-[#D6DDD9] pb-4">
+              <h2 class="text-base font-semibold text-[#17201C]">
+                Informasi Pembelian
+              </h2>
+              <p class="mt-1 text-sm text-[#6B756F]">
+                Data berikut digunakan sebagai acuan saat melakukan pembelian dari supplier.
+              </p>
+            </div>
+
+            <div class="mt-5 grid gap-5 md:grid-cols-2">
+              <label class="block md:col-span-2">
+                <span class="mb-1.5 block text-sm font-semibold text-[#46514B]">
+                  SKU Supplier <span class="text-[#C0392B]">*</span>
+                </span>
+                <input
+                  v-model="supplierSku"
+                  type="text"
+                  required
+                  maxlength="100"
+                  placeholder="Contoh: BUKU-ABC-001"
+                  class="w-full rounded-lg border border-[#C9D1CD] bg-white px-3 py-2.5 text-sm text-[#17201C] outline-none transition placeholder:text-[#A0AAA4] focus:border-[#176B4D] focus:ring-2 focus:ring-[#176B4D]/10"
+                />
+              </label>
+
+              <label class="block">
+                <span class="mb-1.5 block text-sm font-semibold text-[#46514B]">
+                  Harga Beli <span class="text-[#C0392B]">*</span>
+                </span>
+                <div class="relative">
+                  <span class="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-[#6B756F]">
+                    Rp
+                  </span>
+                  <input
+                    v-model.number="purchasePrice"
+                    type="number"
+                    min="0"
+                    step="1"
+                    required
+                    class="w-full rounded-lg border border-[#C9D1CD] bg-white py-2.5 pl-10 pr-3 text-right text-sm tabular-nums text-[#17201C] outline-none transition focus:border-[#176B4D] focus:ring-2 focus:ring-[#176B4D]/10"
+                  />
+                </div>
+              </label>
+
+              <label class="block">
+                <span class="mb-1.5 block text-sm font-semibold text-[#46514B]">
+                  Minimum Order <span class="text-[#C0392B]">*</span>
+                </span>
+                <input
+                  v-model.number="minimumOrder"
+                  type="number"
+                  min="1"
+                  step="1"
+                  required
+                  class="w-full rounded-lg border border-[#C9D1CD] bg-white px-3 py-2.5 text-right text-sm tabular-nums text-[#17201C] outline-none transition focus:border-[#176B4D] focus:ring-2 focus:ring-[#176B4D]/10"
+                />
+              </label>
+
+              <label class="block">
+                <span class="mb-1.5 block text-sm font-semibold text-[#46514B]">
+                  Lead Time (hari) <span class="text-[#C0392B]">*</span>
+                </span>
+                <div class="relative">
+                  <input
+                    v-model.number="leadTimeDays"
+                    type="number"
+                    min="0"
+                    step="1"
+                    required
+                    class="w-full rounded-lg border border-[#C9D1CD] bg-white py-2.5 pl-3 pr-16 text-right text-sm tabular-nums text-[#17201C] outline-none transition focus:border-[#176B4D] focus:ring-2 focus:ring-[#176B4D]/10"
+                  />
+                  <span class="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-[#6B756F]">
+                    hari
+                  </span>
+                </div>
+              </label>
+            </div>
+          </section>
+
+          <section class="mt-8 border-t border-[#D6DDD9] pt-6">
+            <label class="flex cursor-pointer items-start gap-3 rounded-lg border border-[#D6DDD9] bg-[#F8FAF9] p-4 transition hover:border-[#B8C3BD]">
+              <input
+                v-model="isPreferred"
+                type="checkbox"
+                class="mt-0.5 h-4 w-4 rounded border-[#C9D1CD] text-[#176B4D] focus:ring-[#176B4D]"
+              />
+
+              <span>
+                <span class="block text-sm font-semibold text-[#17201C]">
+                  Preferred supplier
+                </span>
+                <span class="mt-1 block text-xs leading-5 text-[#6B756F]">
+                  Tandai supplier ini sebagai pilihan utama untuk produk tersebut.
+                </span>
+              </span>
+            </label>
+          </section>
+
+          <div class="mt-8 flex flex-col-reverse gap-3 border-t border-[#D6DDD9] pt-5 sm:flex-row sm:justify-end">
+            <button
+              type="button"
+              class="w-full rounded-lg border border-[#C9D1CD] bg-white px-4 py-2.5 text-sm font-semibold text-[#46514B] transition hover:bg-[#F8FAF9] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#176B4D] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+              :disabled="saving"
+              @click="cancel"
             >
-              {{ product.name }} — {{ product.sku }}
-            </option>
-          </select>
+              Batal
+            </button>
 
-          <span
-            v-if="selectedProduct"
-            class="mt-1 block text-xs text-slate-500"
-          >
-            Harga jual:
-            {{ selectedProduct.selling_price ?? selectedProduct.selling_price }}
-          </span>
-        </label>
-
-        <label class="block">
-          <span class="mb-1 block text-sm font-medium text-slate-700">
-            Supplier *
-          </span>
-
-          <select
-            v-model="supplierId"
-            :disabled="isEdit"
-            required
-            class="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100 disabled:bg-slate-100"
-          >
-            <option value="">Pilih supplier</option>
-
-            <option
-              v-for="supplier in suppliers"
-              :key="supplier.id"
-              :value="supplier.id"
+            <button
+              type="submit"
+              class="w-full rounded-lg bg-[#176B4D] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#1F805D] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#176B4D] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+              :disabled="saving"
             >
-              {{ supplier.name }} — {{ supplier.supplierCode }}
-            </option>
-          </select>
-
-          <span
-            v-if="selectedSupplier"
-            class="mt-1 block text-xs text-slate-500"
-          >
-            Status: {{ selectedSupplier.status }}
-          </span>
-        </label>
-      </div>
-
-      <div class="border-t border-slate-200 pt-6">
-        <h2 class="text-base font-semibold text-slate-900">
-          Informasi Pembelian
-        </h2>
-
-        <div class="mt-4 grid gap-5 md:grid-cols-2">
-          <label class="block">
-            <span class="mb-1 block text-sm font-medium text-slate-700">
-              SKU Supplier *
-            </span>
-
-            <input
-              v-model="supplierSku"
-              type="text"
-              required
-              maxlength="100"
-              placeholder="BUKU-ABC-001"
-              class="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100"
-            />
-          </label>
-
-          <label class="block">
-            <span class="mb-1 block text-sm font-medium text-slate-700">
-              Harga Beli *
-            </span>
-
-            <input
-              v-model.number="purchasePrice"
-              type="number"
-              min="0"
-              step="1"
-              required
-              class="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100"
-            />
-          </label>
-
-          <label class="block">
-            <span class="mb-1 block text-sm font-medium text-slate-700">
-              Minimum Order *
-            </span>
-
-            <input
-              v-model.number="minimumOrder"
-              type="number"
-              min="1"
-              step="1"
-              required
-              class="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100"
-            />
-          </label>
-
-          <label class="block">
-            <span class="mb-1 block text-sm font-medium text-slate-700">
-              Lead Time (hari) *
-            </span>
-
-            <input
-              v-model.number="leadTimeDays"
-              type="number"
-              min="0"
-              step="1"
-              required
-              class="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100"
-            />
-          </label>
+              {{ saving ? 'Menyimpan...' : (isEdit ? 'Simpan Perubahan' : 'Simpan Produk Supplier') }}
+            </button>
+          </div>
         </div>
       </div>
 
-      <label class="flex items-start gap-3 rounded-lg border border-slate-200 p-4">
-        <input
-          v-model="isPreferred"
-          type="checkbox"
-          class="mt-1 h-4 w-4 rounded border-slate-300 text-emerald-700 focus:ring-emerald-500"
-        />
+      <aside class="h-fit rounded-xl border border-[#D6DDD9] bg-[#F8FAF9] p-5 lg:sticky lg:top-5">
+        <h2 class="text-sm font-semibold uppercase tracking-[0.08em] text-[#46514B]">
+          Ringkasan
+        </h2>
 
-        <span>
-          <span class="block text-sm font-medium text-slate-800">
-            Preferred supplier
-          </span>
+        <dl class="mt-4 divide-y divide-[#D6DDD9]">
+          <div class="py-3 first:pt-0">
+            <dt class="text-xs text-[#6B756F]">Produk</dt>
+            <dd class="mt-1 text-sm font-semibold text-[#17201C]">
+              {{ selectedProduct?.name || 'Belum dipilih' }}
+            </dd>
+          </div>
 
-          <span class="mt-1 block text-xs text-slate-500">
-            Satu produk boleh memiliki lebih dari satu preferred supplier.
-          </span>
-        </span>
-      </label>
+          <div class="py-3">
+            <dt class="text-xs text-[#6B756F]">Supplier</dt>
+            <dd class="mt-1 text-sm font-semibold text-[#17201C]">
+              {{ selectedSupplier?.name || 'Belum dipilih' }}
+            </dd>
+          </div>
 
-      <div class="flex justify-end gap-3 border-t border-slate-200 pt-5">
-        <button
-          type="button"
-          class="rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-          :disabled="saving"
-          @click="cancel"
-        >
-          Batal
-        </button>
+          <div class="py-3">
+            <dt class="text-xs text-[#6B756F]">Harga beli</dt>
+            <dd class="mt-1 text-right text-base font-semibold tabular-nums text-[#17201C]">
+              {{ purchasePrice === null ? '—' : `Rp ${purchasePrice.toLocaleString('id-ID')}` }}
+            </dd>
+          </div>
 
-        <button
-          type="submit"
-          class="rounded-lg bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-50"
-          :disabled="saving"
-        >
-          {{ saving ? 'Menyimpan...' : 'Simpan' }}
-        </button>
-      </div>
+          <div class="py-3">
+            <dt class="text-xs text-[#6B756F]">Minimum order</dt>
+            <dd class="mt-1 text-right text-sm font-semibold tabular-nums text-[#17201C]">
+              {{ minimumOrder ?? '—' }}
+            </dd>
+          </div>
+
+          <div class="py-3 last:pb-0">
+            <dt class="text-xs text-[#6B756F]">Lead time</dt>
+            <dd class="mt-1 text-right text-sm font-semibold tabular-nums text-[#17201C]">
+              {{ leadTimeDays ?? '—' }} hari
+            </dd>
+          </div>
+        </dl>
+
+        <div class="mt-5 rounded-lg border border-[#D6DDD9] bg-white p-3 text-xs leading-5 text-[#6B756F]">
+          Field bertanda <span class="font-semibold text-[#C0392B]">*</span> wajib diisi.
+          Saat edit, produk dan supplier tidak dapat diubah.
+        </div>
+      </aside>
     </form>
   </section>
 </template>

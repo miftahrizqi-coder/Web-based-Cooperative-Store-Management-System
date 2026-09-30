@@ -2,10 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getPurchase } from '../../api/procurement'
-import type {
-  PaymentStatus,
-  Purchase,
-} from '../../types/procurement'
+import type { PaymentStatus, Purchase } from '../../types/procurement'
 import { useAuth } from '../../stores/auth'
 
 const route = useRoute()
@@ -13,7 +10,6 @@ const router = useRouter()
 const { token } = useAuth()
 
 const purchase = ref<Purchase | null>(null)
-
 const isLoading = ref(true)
 const errorMessage = ref('')
 
@@ -27,10 +23,17 @@ const paymentStatusLabel: Record<PaymentStatus, string> = {
 }
 
 const paymentStatusClass: Record<PaymentStatus, string> = {
-  UNPAID: 'bg-red-100 text-red-800',
-  PARTIALLY_PAID: 'bg-yellow-100 text-yellow-800',
-  PAID: 'bg-green-100 text-green-800',
-  OVERDUE: 'bg-orange-100 text-orange-800',
+  UNPAID: 'border-amber-200 bg-amber-50 text-amber-800',
+  PARTIALLY_PAID: 'border-amber-200 bg-amber-50 text-amber-800',
+  PAID: 'border-emerald-200 bg-emerald-50 text-emerald-800',
+  OVERDUE: 'border-red-200 bg-red-50 text-red-800',
+}
+
+const paymentStatusDotClass: Record<PaymentStatus, string> = {
+  UNPAID: 'bg-amber-500',
+  PARTIALLY_PAID: 'bg-amber-500',
+  PAID: 'bg-emerald-600',
+  OVERDUE: 'bg-red-600',
 }
 
 const totalQuantity = computed(() => {
@@ -42,10 +45,10 @@ const totalQuantity = computed(() => {
   )
 })
 
+const itemCount = computed(() => purchase.value?.items.length ?? 0)
+
 function formatDate(value: string | null) {
-  if (!value) {
-    return '-'
-  }
+  if (!value) return '-'
 
   return new Intl.DateTimeFormat('id-ID', {
     dateStyle: 'medium',
@@ -70,8 +73,7 @@ async function loadPurchase() {
   }
 
   if (!purchaseId || purchaseId === 'undefined') {
-    errorMessage.value =
-      'Purchase ID tidak ditemukan.'
+    errorMessage.value = 'Purchase ID tidak ditemukan.'
     isLoading.value = false
     return
   }
@@ -80,10 +82,7 @@ async function loadPurchase() {
   errorMessage.value = ''
 
   try {
-    purchase.value = await getPurchase(
-      token.value,
-      purchaseId,
-    )
+    purchase.value = await getPurchase(token.value, purchaseId)
   } catch (error) {
     errorMessage.value =
       error instanceof Error
@@ -98,316 +97,431 @@ onMounted(loadPurchase)
 </script>
 
 <template>
-  <section class="space-y-6">
-    <div>
-      <button
-        type="button"
-        class="text-sm font-medium text-green-800 hover:underline focus:outline-none focus:ring-2 focus:ring-green-700"
-        @click="router.push('/purchases')"
-      >
-        ← Kembali ke Purchase
-      </button>
-
-      <div
-        class="mt-3 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"
-      >
-        <div>
-          <h1 class="text-2xl font-semibold text-gray-900">
-            {{ purchase?.purchaseNumber || 'Detail Purchase' }}
-          </h1>
-
-          <p class="mt-1 text-sm text-gray-600">
-            Detail transaksi pembelian berdasarkan Goods Receipt.
-          </p>
-        </div>
-
-        <span
-          v-if="purchase"
-          class="inline-flex w-fit rounded-full px-3 py-1 text-sm font-medium"
-          :class="paymentStatusClass[purchase.paymentStatus]"
+  <main class="min-w-0 bg-[#F8FAF9] text-[#17201C]">
+    <div class="mx-auto max-w-[1440px] space-y-6 px-4 py-6 sm:px-6 lg:px-8">
+      <!-- Breadcrumb -->
+      <nav aria-label="Breadcrumb" class="flex items-center gap-2 text-sm text-[#6B756F]">
+        <button
+          type="button"
+          class="rounded-md transition hover:text-[#176B4D] focus:outline-none focus:ring-2 focus:ring-[#176B4D] focus:ring-offset-2"
+          @click="router.push('/purchases')"
         >
-          {{ paymentStatusLabel[purchase.paymentStatus] }}
+          Purchases
+        </button>
+        <span aria-hidden="true">/</span>
+        <span class="font-medium text-[#46514B]">
+          {{ purchase?.purchaseNumber || 'Detail Purchase' }}
         </span>
-      </div>
-    </div>
+      </nav>
 
-    <div
-      v-if="isLoading"
-      class="space-y-4 rounded-xl border border-gray-200 bg-white p-6"
-    >
-      <div class="h-8 animate-pulse rounded bg-gray-100"></div>
-      <div class="h-24 animate-pulse rounded bg-gray-100"></div>
-      <div class="h-48 animate-pulse rounded bg-gray-100"></div>
-    </div>
-
-    <div
-      v-else-if="errorMessage"
-      class="rounded-xl border border-red-200 bg-red-50 p-6"
-      role="alert"
-    >
-      <h2 class="font-semibold text-red-800">
-        Purchase gagal dimuat
-      </h2>
-
-      <p class="mt-1 text-sm text-red-700">
-        {{ errorMessage }}
-      </p>
-
-      <button
-        type="button"
-        class="mt-4 rounded-lg border border-red-300 px-4 py-2 text-sm font-medium text-red-800 hover:bg-red-100 focus:outline-none focus:ring-2 focus:ring-red-600 focus:ring-offset-2"
-        @click="loadPurchase"
-      >
-        Coba Lagi
-      </button>
-    </div>
-
-    <template v-else-if="purchase">
+      <!-- Loading -->
       <section
-        class="rounded-xl border border-gray-200 bg-white p-6"
+        v-if="isLoading"
+        aria-label="Memuat detail purchase"
+        class="space-y-4"
       >
-        <h2 class="text-lg font-semibold text-gray-900">
-          Informasi Purchase
-        </h2>
+        <div class="h-8 w-64 animate-pulse rounded-md bg-[#E6EBE8]" />
+        <div class="h-4 w-96 max-w-full animate-pulse rounded bg-[#E6EBE8]" />
 
-        <div class="mt-5 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-          <div>
-            <p
-              class="text-xs font-medium uppercase tracking-wide text-gray-500"
-            >
-              Purchase Number
-            </p>
+        <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+          <div class="h-48 animate-pulse rounded-lg border border-[#D6DDD9] bg-white" />
+          <div class="h-48 animate-pulse rounded-lg border border-[#D6DDD9] bg-white" />
+        </div>
 
-            <p class="mt-1 font-medium text-gray-900">
-              {{ purchase.purchaseNumber }}
-            </p>
+        <div class="h-72 animate-pulse rounded-lg border border-[#D6DDD9] bg-white" />
+      </section>
+
+      <!-- Error -->
+      <section
+        v-else-if="errorMessage"
+        class="rounded-lg border border-red-200 bg-white p-6 shadow-[0_1px_2px_rgba(18,55,42,.06)]"
+        role="alert"
+      >
+        <div class="flex items-start gap-3">
+          <div class="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-red-50 text-red-700">
+            !
           </div>
 
-          <div>
-            <p
-              class="text-xs font-medium uppercase tracking-wide text-gray-500"
+          <div class="min-w-0">
+            <h1 class="text-lg font-semibold text-[#17201C]">
+              Purchase gagal dimuat
+            </h1>
+            <p class="mt-1 text-sm leading-5 text-[#6B756F]">
+              {{ errorMessage }}
+            </p>
+
+            <button
+              type="button"
+              class="mt-4 inline-flex min-h-10 items-center justify-center rounded-md border border-[#D6DDD9] bg-white px-4 text-sm font-semibold text-[#176B4D] transition hover:bg-[#F0F8F5] focus:outline-none focus:ring-2 focus:ring-[#176B4D] focus:ring-offset-2"
+              @click="loadPurchase"
             >
-              Supplier
-            </p>
-
-            <p class="mt-1 font-medium text-gray-900">
-              {{ purchase.supplierId }}
-            </p>
-          </div>
-
-          <div>
-            <p
-              class="text-xs font-medium uppercase tracking-wide text-gray-500"
-            >
-              Purchase Order
-            </p>
-
-            <p class="mt-1 font-medium text-gray-900">
-              {{ purchase.purchaseOrderId }}
-            </p>
-          </div>
-
-          <div>
-            <p
-              class="text-xs font-medium uppercase tracking-wide text-gray-500"
-            >
-              Goods Receipt
-            </p>
-
-            <p class="mt-1 font-medium text-gray-900">
-              {{ purchase.receiptId }}
-            </p>
-          </div>
-
-          <div>
-            <p
-              class="text-xs font-medium uppercase tracking-wide text-gray-500"
-            >
-              Dibuat Oleh
-            </p>
-
-            <p class="mt-1 font-medium text-gray-900">
-              {{ purchase.createdBy }}
-            </p>
-          </div>
-
-          <div>
-            <p
-              class="text-xs font-medium uppercase tracking-wide text-gray-500"
-            >
-              Dibuat Pada
-            </p>
-
-            <p class="mt-1 text-sm text-gray-900">
-              {{ formatDate(purchase.createdAt) }}
-            </p>
-          </div>
-
-          <div>
-            <p
-              class="text-xs font-medium uppercase tracking-wide text-gray-500"
-            >
-              Jumlah Item
-            </p>
-
-            <p class="mt-1 font-medium text-gray-900">
-              {{ purchase.items.length }}
-            </p>
-          </div>
-
-          <div>
-            <p
-              class="text-xs font-medium uppercase tracking-wide text-gray-500"
-            >
-              Total Quantity
-            </p>
-
-            <p class="mt-1 font-medium text-gray-900">
-              {{ totalQuantity }}
-            </p>
+              Coba Lagi
+            </button>
           </div>
         </div>
       </section>
 
-      <section
-        class="overflow-x-auto rounded-xl border border-gray-200 bg-white"
-      >
-        <div class="border-b border-gray-200 px-6 py-4">
-          <h2 class="text-lg font-semibold text-gray-900">
-            Item Purchase
-          </h2>
-        </div>
+      <template v-else-if="purchase">
+        <!-- Page header -->
+        <header class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div class="min-w-0">
+            <div class="flex flex-wrap items-center gap-3">
+              <h1 class="break-all text-2xl font-semibold leading-8 tracking-tight text-[#17201C] sm:text-[28px]">
+                {{ purchase.purchaseNumber }}
+              </h1>
 
-        <table class="min-w-full text-left text-sm">
-          <thead class="border-b border-gray-200 bg-gray-50">
-            <tr>
-              <th class="px-4 py-3 font-medium text-gray-600">
-                Produk
-              </th>
-
-              <th class="px-4 py-3 text-right font-medium text-gray-600">
-                Quantity
-              </th>
-
-              <th class="px-4 py-3 text-right font-medium text-gray-600">
-                Harga
-              </th>
-
-              <th class="px-4 py-3 text-right font-medium text-gray-600">
-                Subtotal
-              </th>
-            </tr>
-          </thead>
-
-          <tbody class="divide-y divide-gray-100">
-            <tr
-              v-for="item in purchase.items"
-              :key="item.productId"
-            >
-              <td class="px-4 py-4">
-                <p class="font-medium text-gray-900">
-                  {{ item.name }}
-                </p>
-
-                <p class="mt-1 text-xs text-gray-500">
-                  {{ item.productId }}
-                </p>
-              </td>
-
-              <td class="px-4 py-4 text-right text-gray-700">
-                {{ item.quantity }}
-              </td>
-
-              <td
-                class="whitespace-nowrap px-4 py-4 text-right text-gray-700"
+              <span
+                class="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold"
+                :class="paymentStatusClass[purchase.paymentStatus]"
               >
-                {{ formatCurrency(item.price) }}
-              </td>
-
-              <td
-                class="whitespace-nowrap px-4 py-4 text-right font-medium text-gray-900"
-              >
-                {{ formatCurrency(item.subtotal) }}
-              </td>
-            </tr>
-
-            <tr v-if="purchase.items.length === 0">
-              <td
-                colspan="4"
-                class="px-6 py-10 text-center text-sm text-gray-500"
-              >
-                Tidak ada item pada Purchase ini.
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </section>
-
-      <section
-        class="rounded-xl border border-gray-200 bg-white p-6"
-      >
-        <div class="ml-auto max-w-md space-y-4">
-          <div class="flex items-center justify-between gap-4">
-            <span class="text-sm text-gray-600">
-              Subtotal
-            </span>
-
-            <span class="font-medium text-gray-900">
-              {{ formatCurrency(purchase.subtotal) }}
-            </span>
-          </div>
-
-          <div class="flex items-center justify-between gap-4">
-            <span class="text-sm text-gray-600">
-              Discount
-            </span>
-
-            <span class="font-medium text-gray-900">
-              {{ formatCurrency(purchase.discount) }}
-            </span>
-          </div>
-
-          <div
-            class="border-t border-gray-200 pt-4"
-          >
-            <div class="flex items-center justify-between gap-4">
-              <span class="text-base font-semibold text-gray-900">
-                Total
-              </span>
-
-              <span class="text-xl font-bold text-gray-900">
-                {{ formatCurrency(purchase.total) }}
+                <span
+                  class="h-1.5 w-1.5 rounded-full"
+                  :class="paymentStatusDotClass[purchase.paymentStatus]"
+                  aria-hidden="true"
+                />
+                {{ paymentStatusLabel[purchase.paymentStatus] }}
               </span>
             </div>
-          </div>
-        </div>
-      </section>
 
-      <section
-        class="rounded-xl border border-gray-200 bg-white p-6"
-      >
-        <div
-          class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
-        >
-          <div>
-            <h2 class="text-lg font-semibold text-gray-900">
-              Status Pembayaran
-            </h2>
-
-            <p class="mt-1 text-sm text-gray-600">
-              Status saat ini:
-              {{ paymentStatusLabel[purchase.paymentStatus] }}
+            <p class="mt-2 max-w-3xl text-sm leading-5 text-[#6B756F]">
+              Detail transaksi pembelian berdasarkan Goods Receipt.
+              Gunakan informasi di bawah untuk menelusuri supplier, item,
+              nilai transaksi, dan status pembayaran.
             </p>
           </div>
 
-          <span
-            class="inline-flex w-fit rounded-full px-3 py-1 text-sm font-medium"
-            :class="paymentStatusClass[purchase.paymentStatus]"
+          <button
+            type="button"
+            class="inline-flex min-h-10 shrink-0 items-center justify-center rounded-md border border-[#D6DDD9] bg-white px-4 text-sm font-semibold text-[#46514B] shadow-[0_1px_2px_rgba(18,55,42,.06)] transition hover:bg-[#F1F4F2] focus:outline-none focus:ring-2 focus:ring-[#176B4D] focus:ring-offset-2"
+            @click="router.push('/purchases')"
           >
-            {{ paymentStatusLabel[purchase.paymentStatus] }}
-          </span>
+            ← Kembali
+          </button>
+        </header>
+
+        <!-- Summary + financial -->
+        <section class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
+          <div class="rounded-lg border border-[#D6DDD9] bg-white shadow-[0_1px_2px_rgba(18,55,42,.06)]">
+            <div class="border-b border-[#E6EBE8] px-5 py-4 sm:px-6">
+              <h2 class="text-base font-semibold text-[#17201C]">
+                Ringkasan Purchase
+              </h2>
+              <p class="mt-1 text-sm text-[#6B756F]">
+                Informasi utama transaksi dan sumber penerimaan barang.
+              </p>
+            </div>
+
+            <dl class="grid gap-x-6 gap-y-5 px-5 py-5 sm:grid-cols-2 sm:px-6 lg:grid-cols-3">
+              <div>
+                <dt class="text-xs font-medium uppercase tracking-wide text-[#6B756F]">
+                  Purchase Number
+                </dt>
+                <dd class="mt-1 break-all text-sm font-semibold text-[#17201C]">
+                  {{ purchase.purchaseNumber }}
+                </dd>
+              </div>
+
+              <div>
+                <dt class="text-xs font-medium uppercase tracking-wide text-[#6B756F]">
+                  Supplier
+                </dt>
+                <dd class="mt-1 break-all text-sm font-medium text-[#17201C]">
+                  {{ purchase.supplierId }}
+                </dd>
+              </div>
+
+              <div>
+                <dt class="text-xs font-medium uppercase tracking-wide text-[#6B756F]">
+                  Purchase Order
+                </dt>
+                <dd class="mt-1 break-all text-sm font-medium text-[#17201C]">
+                  {{ purchase.purchaseOrderId }}
+                </dd>
+              </div>
+
+              <div>
+                <dt class="text-xs font-medium uppercase tracking-wide text-[#6B756F]">
+                  Goods Receipt
+                </dt>
+                <dd class="mt-1 break-all text-sm font-medium text-[#17201C]">
+                  {{ purchase.receiptId }}
+                </dd>
+              </div>
+
+              <div>
+                <dt class="text-xs font-medium uppercase tracking-wide text-[#6B756F]">
+                  Dibuat Oleh
+                </dt>
+                <dd class="mt-1 break-all text-sm font-medium text-[#17201C]">
+                  {{ purchase.createdBy }}
+                </dd>
+              </div>
+
+              <div>
+                <dt class="text-xs font-medium uppercase tracking-wide text-[#6B756F]">
+                  Dibuat Pada
+                </dt>
+                <dd class="mt-1 text-sm text-[#17201C]">
+                  {{ formatDate(purchase.createdAt) }}
+                </dd>
+              </div>
+            </dl>
+          </div>
+
+          <aside class="rounded-lg border border-[#D6DDD9] bg-white shadow-[0_1px_2px_rgba(18,55,42,.06)]">
+            <div class="border-b border-[#E6EBE8] px-5 py-4">
+              <h2 class="text-base font-semibold text-[#17201C]">
+                Ringkasan Keuangan
+              </h2>
+              <p class="mt-1 text-sm text-[#6B756F]">
+                Nilai transaksi purchase.
+              </p>
+            </div>
+
+            <div class="space-y-4 px-5 py-5">
+              <div class="flex items-center justify-between gap-4 text-sm">
+                <span class="text-[#6B756F]">Subtotal</span>
+                <span class="font-medium tabular-nums text-[#17201C]">
+                  {{ formatCurrency(purchase.subtotal) }}
+                </span>
+              </div>
+
+              <div class="flex items-center justify-between gap-4 text-sm">
+                <span class="text-[#6B756F]">Diskon</span>
+                <span class="font-medium tabular-nums text-[#17201C]">
+                  {{ formatCurrency(purchase.discount) }}
+                </span>
+              </div>
+
+              <div class="border-t border-[#E6EBE8] pt-4">
+                <div class="flex items-end justify-between gap-4">
+                  <span class="text-sm font-semibold text-[#46514B]">Total</span>
+                  <span class="text-xl font-bold tabular-nums text-[#12372A]">
+                    {{ formatCurrency(purchase.total) }}
+                  </span>
+                </div>
+              </div>
+
+              <div class="rounded-md border px-3 py-3" :class="paymentStatusClass[purchase.paymentStatus]">
+                <p class="text-xs font-medium uppercase tracking-wide opacity-80">
+                  Status pembayaran
+                </p>
+                <p class="mt-1 text-sm font-semibold">
+                  {{ paymentStatusLabel[purchase.paymentStatus] }}
+                </p>
+              </div>
+            </div>
+          </aside>
+        </section>
+
+        <!-- Operational summary -->
+        <section class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div class="rounded-lg border border-[#D6DDD9] bg-white p-5 shadow-[0_1px_2px_rgba(18,55,42,.06)]">
+            <p class="text-xs font-medium uppercase tracking-wide text-[#6B756F]">
+              Jumlah jenis produk
+            </p>
+            <p class="mt-2 text-2xl font-bold tabular-nums text-[#12372A]">
+              {{ itemCount }}
+            </p>
+            <p class="mt-1 text-sm text-[#6B756F]">
+              Baris item pada transaksi
+            </p>
+          </div>
+
+          <div class="rounded-lg border border-[#D6DDD9] bg-white p-5 shadow-[0_1px_2px_rgba(18,55,42,.06)]">
+            <p class="text-xs font-medium uppercase tracking-wide text-[#6B756F]">
+              Total quantity
+            </p>
+            <p class="mt-2 text-2xl font-bold tabular-nums text-[#12372A]">
+              {{ totalQuantity }}
+            </p>
+            <p class="mt-1 text-sm text-[#6B756F]">
+              Total unit yang tercatat
+            </p>
+          </div>
+
+          <div class="rounded-lg border border-[#D6DDD9] bg-white p-5 shadow-[0_1px_2px_rgba(18,55,42,.06)] sm:col-span-2 lg:col-span-1">
+            <p class="text-xs font-medium uppercase tracking-wide text-[#6B756F]">
+              Dampak pembayaran
+            </p>
+            <p class="mt-2 text-base font-semibold text-[#17201C]">
+              {{ paymentStatusLabel[purchase.paymentStatus] }}
+            </p>
+            <p class="mt-1 text-sm text-[#6B756F]">
+              Status finansial purchase saat ini
+            </p>
+          </div>
+        </section>
+
+        <!-- Items -->
+        <section class="overflow-hidden rounded-lg border border-[#D6DDD9] bg-white shadow-[0_1px_2px_rgba(18,55,42,.06)]">
+          <div class="flex flex-col gap-1 border-b border-[#E6EBE8] px-5 py-4 sm:px-6">
+            <h2 class="text-base font-semibold text-[#17201C]">
+              Item Purchase
+            </h2>
+            <p class="text-sm text-[#6B756F]">
+              Produk yang tercatat dalam transaksi pembelian.
+            </p>
+          </div>
+
+          <div class="overflow-x-auto">
+            <table class="min-w-full text-sm">
+              <caption class="sr-only">
+                Daftar item pada {{ purchase.purchaseNumber }}
+              </caption>
+
+              <thead class="border-b border-[#D6DDD9] bg-[#F1F4F2]">
+                <tr>
+                  <th scope="col" class="whitespace-nowrap px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[#46514B] sm:px-6">
+                    Produk
+                  </th>
+                  <th scope="col" class="whitespace-nowrap px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-[#46514B]">
+                    Quantity
+                  </th>
+                  <th scope="col" class="whitespace-nowrap px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-[#46514B]">
+                    Harga
+                  </th>
+                  <th scope="col" class="whitespace-nowrap px-5 py-3 text-right text-xs font-semibold uppercase tracking-wide text-[#46514B] sm:px-6">
+                    Subtotal
+                  </th>
+                </tr>
+              </thead>
+
+              <tbody class="divide-y divide-[#E6EBE8]">
+                <tr
+                  v-for="item in purchase.items"
+                  :key="item.productId"
+                  class="transition hover:bg-[#F8FAF9]"
+                >
+                  <td class="px-5 py-4 sm:px-6">
+                    <p class="font-semibold text-[#17201C]">
+                      {{ item.name }}
+                    </p>
+                    <p class="mt-1 break-all text-xs text-[#6B756F]">
+                      SKU/Product ID: {{ item.productId }}
+                    </p>
+                  </td>
+
+                  <td class="px-4 py-4 text-right tabular-nums text-[#46514B]">
+                    {{ item.quantity }}
+                  </td>
+
+                  <td class="whitespace-nowrap px-4 py-4 text-right tabular-nums text-[#46514B]">
+                    {{ formatCurrency(item.price) }}
+                  </td>
+
+                  <td class="whitespace-nowrap px-5 py-4 text-right font-semibold tabular-nums text-[#17201C] sm:px-6">
+                    {{ formatCurrency(item.subtotal) }}
+                  </td>
+                </tr>
+
+                <tr v-if="purchase.items.length === 0">
+                  <td colspan="4" class="px-6 py-12 text-center">
+                    <p class="text-sm font-semibold text-[#17201C]">
+                      Belum ada item purchase
+                    </p>
+                    <p class="mt-1 text-sm text-[#6B756F]">
+                      Tidak ada item yang tersedia pada transaksi ini.
+                    </p>
+                  </td>
+                </tr>
+              </tbody>
+
+              <tfoot v-if="purchase.items.length > 0" class="border-t border-[#D6DDD9] bg-[#F8FAF9]">
+                <tr>
+                  <th scope="row" class="px-5 py-3 text-left text-sm font-semibold text-[#46514B] sm:px-6">
+                    Total
+                  </th>
+                  <td class="px-4 py-3 text-right text-sm font-semibold tabular-nums text-[#17201C]">
+                    {{ totalQuantity }}
+                  </td>
+                  <td />
+                  <td class="px-5 py-3 text-right text-sm font-bold tabular-nums text-[#12372A] sm:px-6">
+                    {{ formatCurrency(purchase.total) }}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </section>
+
+        <!-- Payment + traceability -->
+        <section class="grid gap-4 lg:grid-cols-2">
+          <div class="rounded-lg border border-[#D6DDD9] bg-white shadow-[0_1px_2px_rgba(18,55,42,.06)]">
+            <div class="border-b border-[#E6EBE8] px-5 py-4 sm:px-6">
+              <h2 class="text-base font-semibold text-[#17201C]">
+                Status Pembayaran
+              </h2>
+              <p class="mt-1 text-sm text-[#6B756F]">
+                Status finansial yang diterima dari data purchase.
+              </p>
+            </div>
+
+            <div class="px-5 py-5 sm:px-6">
+              <div class="flex items-center gap-3">
+                <span
+                  class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
+                  :class="paymentStatusClass[purchase.paymentStatus]"
+                  aria-hidden="true"
+                >
+                  <span
+                    class="h-2 w-2 rounded-full"
+                    :class="paymentStatusDotClass[purchase.paymentStatus]"
+                  />
+                </span>
+
+                <div>
+                  <p class="text-sm font-semibold text-[#17201C]">
+                    {{ paymentStatusLabel[purchase.paymentStatus] }}
+                  </p>
+                  <p class="mt-0.5 text-xs text-[#6B756F]">
+                    Purchase {{ purchase.purchaseNumber }}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="rounded-lg border border-[#D6DDD9] bg-white shadow-[0_1px_2px_rgba(18,55,42,.06)]">
+            <div class="border-b border-[#E6EBE8] px-5 py-4 sm:px-6">
+              <h2 class="text-base font-semibold text-[#17201C]">
+                Aktivitas & Traceability
+              </h2>
+              <p class="mt-1 text-sm text-[#6B756F]">
+                Metadata transaksi yang tersedia pada data purchase.
+              </p>
+            </div>
+
+            <div class="px-5 py-5 sm:px-6">
+              <ol class="relative border-l border-[#D6DDD9] pl-5">
+                <li class="relative">
+                  <span class="absolute -left-[25px] top-1.5 h-2.5 w-2.5 rounded-full bg-[#176B4D] ring-4 ring-[#F0F8F5]" />
+                  <p class="text-sm font-semibold text-[#17201C]">
+                    Purchase dibuat
+                  </p>
+                  <p class="mt-1 text-xs text-[#6B756F]">
+                    {{ formatDate(purchase.createdAt) }}
+                  </p>
+                  <p class="mt-2 text-sm text-[#46514B]">
+                    Oleh {{ purchase.createdBy }}
+                  </p>
+                </li>
+              </ol>
+            </div>
+          </div>
+        </section>
+
+        <!-- Back action -->
+        <div class="flex justify-start border-t border-[#E6EBE8] pt-2">
+          <button
+            type="button"
+            class="inline-flex min-h-10 items-center justify-center rounded-md border border-[#D6DDD9] bg-white px-4 text-sm font-semibold text-[#46514B] transition hover:bg-[#F1F4F2] focus:outline-none focus:ring-2 focus:ring-[#176B4D] focus:ring-offset-2"
+            @click="router.push('/purchases')"
+          >
+            ← Kembali ke daftar Purchase
+          </button>
         </div>
-      </section>
-    </template>
-  </section>
+      </template>
+    </div>
+  </main>
 </template>
