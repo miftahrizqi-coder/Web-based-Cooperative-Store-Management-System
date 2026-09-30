@@ -151,3 +151,49 @@ export async function createSale(
 
   return response.json()
 }
+
+export async function getSales(
+  accessToken: string,
+): Promise<SaleResponse[]> {
+  const response = await fetch('/api/sales', {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  })
+
+  if (!response.ok) {
+    throw new Error(
+      await getErrorMessage(
+        response,
+        'Gagal mengambil riwayat penjualan.',
+      ),
+    )
+  }
+
+  return response.json()
+}
+
+export async function getSaleDetail(
+  accessToken: string,
+  saleId: string,
+): Promise<SaleResponse> {
+  const response = await fetch(
+    `/api/sales/${encodeURIComponent(saleId)}`,
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    },
+  )
+
+  if (!response.ok) {
+    throw new Error(
+      await getErrorMessage(
+        response,
+        'Gagal mengambil detail transaksi.',
+      ),
+    )
+  }
+
+  return response.json()
+}

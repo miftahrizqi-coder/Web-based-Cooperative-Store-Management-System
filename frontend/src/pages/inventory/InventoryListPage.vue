@@ -6,7 +6,7 @@ import { getInventory } from '../../api/inventory'
 import type { InventoryItem, StockStatus } from '../../types/inventory'
 
 /* Sesuaikan dengan route di router Anda */
-const OPNAME_ROUTE = '/inventory/opname'
+const OPNAME_ROUTE = '/inventory/stock-opname'
 const ADJUSTMENT_ROUTE = '/inventory/adjustment'
 const MOVEMENT_ROUTE = '/inventory/movements'
 const PRODUCTS_ROUTE = '/products'
@@ -300,9 +300,9 @@ onBeforeUnmount(() => {
     <!-- Page header -->
     <header class="mb-6 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
       <div>
-        <h1 class="text-[28px] font-semibold leading-9 text-[#17201C]">Stok</h1>
+        <h1 class="text-[28px] font-semibold leading-9 text-[#17201C]">Stock</h1>
         <p class="mt-1 max-w-2xl text-sm leading-5 text-[#46514B]">
-          Pantau ketersediaan stok produk aktif. Perubahan stok dilakukan lewat stock opname atau
+          Pantau ketersediaan stok produk aktif. Perubahan stock dilakukan lewat stock opname atau
           stock adjustment dan selalu tercatat di riwayat.
         </p>
       </div>

@@ -352,6 +352,26 @@ const router = createRouter({
         roles: ['kasir'],
       },
     },
+    {
+      path: '/sales',
+      name: 'sales',
+      component: () =>
+        import('../pages/sales/SalesPage.vue'),
+      meta: {
+        requiresAuth: true,
+        roles: ['admin', 'pengurus', 'kasir'],
+      },
+    },
+    {
+      path: '/sales/:id',
+      name: 'sale-detail',
+      component: () =>
+        import('../pages/sales/SaleDetailPage.vue'),
+      meta: {
+        requiresAuth: true,
+        roles: ['admin', 'pengurus', 'kasir'],
+      },
+    },
   ],
 })
 
