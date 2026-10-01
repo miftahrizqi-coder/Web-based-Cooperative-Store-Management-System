@@ -521,7 +521,7 @@ onMounted(loadProduct)
                     type="number"
                     step="1"
                     inputmode="numeric"
-                    class="disabled:bg-[#F1F4F2] disabled:text-[#6B756F] "min-h-10 w-full rounded-md border border-[#D6DDD9] bg-white px-3 text-right text-[14px] leading-5 text-[#17201C] outline-none transition focus:border-[#176B4D] focus:ring-2 focus:ring-[#176B4D] focus:ring-offset-2"
+                    class="disabled:bg-[#F1F4F2] disabled:text-[#6B756F] min-h-10 w-full rounded-md border border-[#D6DDD9] bg-white px-3 text-right text-[14px] leading-5 text-[#17201C] outline-none transition focus:border-[#176B4D] focus:ring-2 focus:ring-[#176B4D] focus:ring-offset-2"
                   >
                 </label>
 
