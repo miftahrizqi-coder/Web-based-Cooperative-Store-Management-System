@@ -1,18 +1,23 @@
-export type StockStatus =
-  | 'AVAILABLE'
-  | 'LOW_STOCK'
-  | 'OUT_OF_STOCK'
+import type { StockStatus } from './product'
+
+export type { StockStatus }
 
 export interface InventoryItem {
-  product_id: string
+  productId: string
   sku: string
   barcode: string | null
   name: string
+  categoryId: string
+  categoryName: string | null
   unit: string
   stock: number
-  minimum_stock: number
-  stock_status: StockStatus
-  is_active: boolean
+  minimumStock: number
+  stockStatus: StockStatus
+  purchasePrice: number
+  sellingPrice: number
+  stockValue: number
+  isActive: boolean
+  updatedAt: string
 }
 
 export type StockMovementType =
@@ -23,133 +28,90 @@ export type StockMovementType =
   | 'ADJUSTMENT'
   | 'STOCK_OPNAME'
 
+export const MOVEMENT_TYPE_LABELS: Record<StockMovementType, string> = {
+  PURCHASE: 'Pembelian',
+  SALE: 'Penjualan',
+  SALE_RETURN: 'Retur penjualan',
+  PURCHASE_RETURN: 'Retur pembelian',
+  ADJUSTMENT: 'Adjustment',
+  STOCK_OPNAME: 'Stock opname',
+}
+
 export interface StockMovement {
   id: string
-  product_id: string
+  productId: string
   sku: string
-  product_name: string
+  productName: string
   type: StockMovementType
+  /** Bertanda: positif = masuk, negatif = keluar. */
   quantity: number
-  stock_before: number
-  stock_after: number
-  reference_type: string | null
-  reference_id: string | null
-  created_by: string
-  created_at: string
+  stockBefore: number
+  stockAfter: number
+  referenceType: string | null
+  referenceId: string | null
+  referenceNumber: string | null
+  reason: string | null
+  createdBy: string
+  createdByName: string | null
+  createdAt: string
 }
 
 export interface StockAdjustmentPayload {
-  product_id: string
+  productId: string
   quantity: number
   reason: string
 }
 
 export interface StockAdjustmentResponse {
-  product_id: string
+  productId: string
   quantity: number
-  stock_before: number
-  stock_after: number
+  stockBefore: number
+  stockAfter: number
   reason: string
-  movement_id: string
+  movementId: string
+}
+
+export interface StockOpnameItemPayload {
+  productId: string
+  physicalStock: number
+  systemStock: number | null
+  reason: string | null
 }
 
 export interface StockOpnamePayload {
-  product_id: string
-  physical_stock: number
-  reason: string
+  items: StockOpnameItemPayload[]
+  notes: string | null
 }
 
-export interface StockOpnameResponse {
-  product_id: string
-  system_stock: number
-  physical_stock: number
+export interface StockOpnameItem {
+  productId: string
+  sku: string
+  name: string
+  systemStock: number
+  physicalStock: number
   difference: number
-  reason: string
-  movement_id: string | null
-  audit_event_id: string
+  reason: string | null
+  movementId: string | null
+}
+
+export interface StockOpname {
+  id: string
+  opnameNumber: string
+  items: StockOpnameItem[]
+  notes: string | null
+  totalItems: number
+  itemsWithDifference: number
+  createdBy: string
+  createdByName: string | null
+  createdAt: string
 }
 
 export interface StockAlert {
-  product_id: string
+  productId: string
   sku: string
-  name: string
-  stock: number
-  minimum_stock: number
-  status: 'LOW_STOCK' | 'OUT_OF_STOCK'
-}
-
-export interface InventoryItem {
-  product_id: string
-  sku: string
-  barcode: string | null
   name: string
   unit: string
   stock: number
-  minimum_stock: number
-  stock_status:
-    | 'AVAILABLE'
-    | 'LOW_STOCK'
-    | 'OUT_OF_STOCK'
-  is_active: boolean
-}
-
-export interface StockMovement {
-  id: string
-  product_id: string
-  sku: string
-  product_name: string
-  type:
-    | 'PURCHASE'
-    | 'SALE'
-    | 'SALE_RETURN'
-    | 'PURCHASE_RETURN'
-    | 'ADJUSTMENT'
-    | 'STOCK_OPNAME'
-  quantity: number
-  stock_before: number
-  stock_after: number
-  reference_type: string | null
-  reference_id: string | null
-  created_by: string
-  created_at: string
-}
-
-export interface StockAdjustmentPayload {
-  product_id: string
-  quantity: number
-  reason: string
-}
-
-export interface StockAdjustmentResponse {
-  product_id: string
-  quantity: number
-  stock_before: number
-  stock_after: number
-  reason: string
-  movement_id: string
-}
-
-export interface StockOpnamePayload {
-  product_id: string
-  physical_stock: number
-  reason: string
-}
-
-export interface StockOpnameResponse {
-  product_id: string
-  system_stock: number
-  physical_stock: number
-  difference: number
-  reason: string
-  movement_id: string | null
-  audit_event_id: string
-}
-
-export interface StockAlert {
-  product_id: string
-  sku: string
-  name: string
-  stock: number
-  minimum_stock: number
+  minimumStock: number
   status: 'LOW_STOCK' | 'OUT_OF_STOCK'
 }

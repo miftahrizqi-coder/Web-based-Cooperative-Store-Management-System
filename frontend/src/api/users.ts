@@ -1,12 +1,14 @@
+import { api } from '../services/api'
 import type { UserRole } from '../types/auth'
 import type { User } from '../types/user'
 
-interface CreateUserRequest {
+export interface CreateUserRequest {
   username: string
   email: string
   password: string
   name: string
   role: UserRole
+  memberId?: string | null
 }
 
 export interface UpdateUserRequest {
@@ -14,116 +16,31 @@ export interface UpdateUserRequest {
   name: string
   role: UserRole
   is_active: boolean
+  memberId?: string | null
 }
 
-export async function getUsers(
-  accessToken: string,
-): Promise<User[]> {
-  const response = await fetch('/api/users', {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-    },
-  })
+// accessToken dipertahankan demi kompatibilitas pemanggil lama.
 
-  if (!response.ok) {
-    throw new Error('Gagal mengambil data pengguna.')
-  }
-
-  return response.json()
+export function getUsers(_accessToken?: string | null): Promise<User[]> {
+  return api.get<User[]>('/api/users')
 }
 
-export async function getUser(
-  accessToken: string,
-  userId: string,
-): Promise<User> {
-  const response = await fetch(`/api/users/${userId}`, {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-    },
-  })
-
-  if (!response.ok) {
-    if (response.status === 404) {
-      throw new Error('Pengguna tidak ditemukan.')
-    }
-
-    throw new Error('Gagal mengambil data pengguna.')
-  }
-
-  return response.json()
+export function getUser(_accessToken: string | null, userId: string): Promise<User> {
+  return api.get<User>(`/api/users/${userId}`)
 }
 
-export async function createUser(
-  accessToken: string,
-  data: CreateUserRequest,
-): Promise<User> {
-  const response = await fetch('/api/users', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${accessToken}`,
-    },
-    body: JSON.stringify(data),
-  })
-
-  if (!response.ok) {
-    if (response.status === 409) {
-      throw new Error('Username atau email sudah digunakan.')
-    }
-
-    throw new Error('Gagal membuat pengguna.')
-  }
-
-  return response.json()
+export function createUser(_accessToken: string | null, data: CreateUserRequest): Promise<User> {
+  return api.post<User>('/api/users', data)
 }
 
-export async function updateUser(
-  accessToken: string,
-  userId: string,
-  data: UpdateUserRequest,
-): Promise<User> {
-  const response = await fetch(`/api/users/${userId}`, {
-    method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${accessToken}`,
-    },
-    body: JSON.stringify(data),
-  })
-
-  if (!response.ok) {
-    if (response.status === 404) {
-      throw new Error('Pengguna tidak ditemukan.')
-    }
-
-    if (response.status === 409) {
-      throw new Error('Email sudah digunakan.')
-    }
-
-    throw new Error('Gagal memperbarui pengguna.')
-  }
-
-  return response.json()
+export function updateUser(_accessToken: string | null, userId: string, data: UpdateUserRequest): Promise<User> {
+  return api.put<User>(`/api/users/${userId}`, data)
 }
 
-export async function deleteUser(
-  accessToken: string,
-  userId: string,
-): Promise<User> {
-  const response = await fetch(`/api/users/${userId}`, {
-    method: 'DELETE',
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-    },
-  })
+export function deleteUser(_accessToken: string | null, userId: string): Promise<User> {
+  return api.delete<User>(`/api/users/${userId}`)
+}
 
-  if (!response.ok) {
-    if (response.status === 404) {
-      throw new Error('Pengguna tidak ditemukan.')
-    }
-
-    throw new Error('Gagal menonaktifkan pengguna.')
-  }
-
-  return response.json()
+export function resetUserPassword(userId: string, newPassword: string): Promise<User> {
+  return api.post<User>(`/api/users/${userId}/reset-password`, { new_password: newPassword })
 }

@@ -38,14 +38,13 @@ import type {
 
 const { currentUser } = useAuth()
 
-/** Batas stok "menipis" untuk StockIndicator. Sesuaikan dengan aturan minimum stok toko. */
-const LOW_STOCK_THRESHOLD = 5
-
+// Metode pembayaran penjualan (PRD §24).
 const paymentOptions: { value: PaymentMethod; label: string }[] = [
-  { value: 'CASH' as PaymentMethod, label: 'Tunai' },
-  { value: 'BANK_TRANSFER' as PaymentMethod, label: 'Transfer bank' },
-  { value: 'DEBIT' as PaymentMethod, label: 'Debit' },
-  { value: 'OTHER' as PaymentMethod, label: 'Lainnya' },
+  { value: 'CASH', label: 'Tunai' },
+  { value: 'QRIS', label: 'QRIS' },
+  { value: 'TRANSFER', label: 'Transfer' },
+  { value: 'DEBIT', label: 'Debit' },
+  { value: 'E_WALLET', label: 'E-Wallet' },
 ]
 
 function paymentLabel(method: string): string {
@@ -85,6 +84,8 @@ const confirmingClear = ref(false)
 
 const paymentMethod = ref<PaymentMethod>('CASH' as PaymentMethod)
 const paidAmount = ref<number>(0)
+const discount = ref<number>(0)
+const paymentReference = ref('')
 const paymentOpen = ref(false)
 const saleSuccess = ref<SaleResponse | null>(null)
 
@@ -107,20 +108,25 @@ let memberSearchTimer: ReturnType<typeof setTimeout> | null = null
 let announceTimer: ReturnType<typeof setTimeout> | null = null
 let productRequestId = 0
 
-const accessToken = computed(() =>
-  localStorage.getItem('access_token'),
-)
 
 /* ------------------------------------------------------------------ */
 /* Turunan                                                             */
 /* ------------------------------------------------------------------ */
 
-const cartTotal = computed(() =>
+const cartSubtotal = computed(() =>
   cart.value.reduce(
     (total, item) =>
-      total + item.product.selling_price * item.quantity,
+      total + item.product.sellingPrice * item.quantity,
     0,
   ),
+)
+const discountError = computed(() =>
+  discount.value < 0 || discount.value > cartSubtotal.value
+    ? 'Diskon tidak boleh negatif atau melebihi subtotal.'
+    : '',
+)
+const cartTotal = computed(() =>
+  Math.max(cartSubtotal.value - Math.max(discount.value, 0), 0),
 )
 
 const cartItemCount = computed(() =>
@@ -136,7 +142,10 @@ const changeAmount = computed(() =>
 )
 
 const paymentValid = computed(
-  () => cart.value.length > 0 && paidAmount.value >= cartTotal.value,
+  () =>
+    cart.value.length > 0 &&
+    !discountError.value &&
+    (paymentMethod.value !== 'CASH' || paidAmount.value >= cartTotal.value),
 )
 
 const paidAmountText = computed(() =>
@@ -192,7 +201,7 @@ type StockState = 'in' | 'low' | 'out'
 
 function stockState(product: POSProduct): StockState {
   if (product.stock <= 0) return 'out'
-  if (product.stock <= LOW_STOCK_THRESHOLD) return 'low'
+  if (product.stock <= product.minimumStock) return 'low'
   return 'in'
 }
 
@@ -257,12 +266,6 @@ function printReceipt(): void {
 /* ------------------------------------------------------------------ */
 
 async function loadProducts(): Promise<void> {
-  const token = accessToken.value
-
-  if (!token) {
-    productError.value = 'Sesi login tidak ditemukan.'
-    return
-  }
 
   const requestId = ++productRequestId
 
@@ -270,7 +273,7 @@ async function loadProducts(): Promise<void> {
   productError.value = ''
 
   try {
-    const result = await searchPOSProducts(token, searchInput.value)
+    const result = await searchPOSProducts(searchInput.value)
 
     // Abaikan respons lama yang tiba setelah pencarian yang lebih baru.
     if (requestId === productRequestId) {
@@ -311,19 +314,13 @@ async function lookupBarcode(rawCode?: string): Promise<void> {
     return
   }
 
-  const token = accessToken.value
-
-  if (!token) {
-    barcodeError.value = 'Sesi login tidak ditemukan.'
-    return
-  }
 
   loadingBarcode.value = true
   barcodeError.value = ''
   addError.value = ''
 
   try {
-    const product = await getPOSProductByBarcode(token, barcode)
+    const product = await getPOSProductByBarcode(barcode)
 
     addToCart(product)
 
@@ -383,7 +380,7 @@ function handleBarcodeKeydown(event: KeyboardEvent): void {
 function addToCart(product: POSProduct): void {
   addError.value = ''
 
-  if (!product.is_active) {
+  if (!product.isActive) {
     addError.value = `${product.name} tidak aktif dan tidak dapat dijual.`
     return
   }
@@ -465,18 +462,12 @@ function clearCart(): void {
 /* ------------------------------------------------------------------ */
 
 async function loadMembers(): Promise<void> {
-  const token = accessToken.value
-
-  if (!token) {
-    memberError.value = 'Sesi login tidak ditemukan.'
-    return
-  }
 
   loadingMembers.value = true
   memberError.value = ''
 
   try {
-    members.value = await searchPOSMembers(token, memberSearch.value)
+    members.value = await searchPOSMembers(memberSearch.value)
   } catch (error) {
     memberError.value =
       error instanceof Error
@@ -518,8 +509,10 @@ function removeMember(): void {
 /* ------------------------------------------------------------------ */
 
 function resetPayment(): void {
-  paymentMethod.value = 'CASH' as PaymentMethod
+  paymentMethod.value = 'CASH'
   paidAmount.value = 0
+  discount.value = 0
+  paymentReference.value = ''
   checkoutError.value = ''
   saleSuccess.value = null
   paymentOpen.value = false
@@ -533,8 +526,9 @@ async function openPayment(): Promise<void> {
   payTrigger = document.activeElement as HTMLElement | null
 
   checkoutError.value = ''
-  paymentMethod.value = 'CASH' as PaymentMethod
+  paymentMethod.value = 'CASH'
   paidAmount.value = 0
+  paymentReference.value = ''
   paymentOpen.value = true
 
   await nextTick()
@@ -564,7 +558,7 @@ function selectPaymentMethod(method: PaymentMethod): void {
   checkoutError.value = ''
 
   // Non-tunai dibayar pas; tunai diisi kasir.
-  paidAmount.value = method === ('CASH' as PaymentMethod) ? 0 : cartTotal.value
+  paidAmount.value = method === 'CASH' ? 0 : cartTotal.value
 }
 
 function handlePaidAmountInput(event: Event): void {
@@ -587,7 +581,11 @@ async function submitSale(): Promise<void> {
     return
   }
 
-  if (paidAmount.value < cartTotal.value) {
+  if (discountError.value) {
+    checkoutError.value = discountError.value
+    return
+  }
+  if (paymentMethod.value === 'CASH' && paidAmount.value < cartTotal.value) {
     checkoutError.value = 'Nominal pembayaran masih kurang.'
     return
   }
@@ -598,24 +596,23 @@ async function submitSale(): Promise<void> {
     return
   }
 
-  const token = accessToken.value
-
-  if (!token) {
-    checkoutError.value = 'Sesi login tidak ditemukan.'
-    return
-  }
 
   submittingSale.value = true
 
   try {
-    const sale = await createSale(token, {
+    const sale = await createSale({
       items: cart.value.map((item) => ({
         productId: item.product.id,
         quantity: item.quantity,
       })),
       memberId: selectedMember.value?.id ?? null,
-      paymentMethod: paymentMethod.value,
-      paidAmount: paidAmount.value,
+      discount: Math.max(discount.value, 0),
+      payment: {
+        method: paymentMethod.value,
+        // Non-tunai: server memakai total transaksi.
+        amount: paymentMethod.value === 'CASH' ? paidAmount.value : null,
+        referenceNumber: paymentReference.value.trim() || null,
+      },
     })
 
     saleSuccess.value = sale
@@ -974,14 +971,14 @@ onBeforeUnmount(() => {
               type="button"
               class="focus-ring flex h-full w-full flex-col justify-between rounded-lg border p-3 text-left transition-colors disabled:cursor-not-allowed"
               :class="
-                !product.is_active || product.stock <= 0
+                !product.isActive || product.stock <= 0
                   ? 'border-[#E6EBE8] bg-[#F8FAF9] opacity-75'
                   : highlightedProductId === product.id
                     ? 'border-[#176B4D] bg-[#F0F8F5]'
                     : 'border-[#D6DDD9] bg-white hover:border-[#176B4D] hover:bg-[#F0F8F5]'
               "
-              :disabled="!product.is_active || product.stock <= 0"
-              :aria-label="`Tambah ${product.name} ke keranjang, ${formatCurrency(product.selling_price)}, ${stockLabel(product)}`"
+              :disabled="!product.isActive || product.stock <= 0"
+              :aria-label="`Tambah ${product.name} ke keranjang, ${formatCurrency(product.sellingPrice)}, ${stockLabel(product)}`"
               @click="addToCart(product)"
             >
               <div>
@@ -1003,7 +1000,7 @@ onBeforeUnmount(() => {
 
               <div class="mt-3">
                 <p class="text-base font-semibold tabular-nums">
-                  {{ formatCurrency(product.selling_price) }}
+                  {{ formatCurrency(product.sellingPrice) }}
                 </p>
 
                 <div class="mt-2 flex flex-wrap items-center gap-1.5">
@@ -1033,7 +1030,7 @@ onBeforeUnmount(() => {
                   </span>
 
                   <span
-                    v-if="!product.is_active"
+                    v-if="!product.isActive"
                     class="rounded-full border border-[#D6DDD9] bg-[#F1F4F2] px-2 py-0.5 text-xs font-medium text-[#46514B]"
                   >
                     Produk nonaktif
@@ -1147,7 +1144,7 @@ onBeforeUnmount(() => {
                   </p>
 
                   <p class="text-[13px] tabular-nums text-[#6B756F]">
-                    {{ formatCurrency(item.product.selling_price) }}
+                    {{ formatCurrency(item.product.sellingPrice) }}
                     / {{ item.product.unit }}
                   </p>
                 </div>
@@ -1196,7 +1193,7 @@ onBeforeUnmount(() => {
                 </div>
 
                 <p class="text-right text-base font-semibold tabular-nums">
-                  {{ formatCurrency(item.product.selling_price * item.quantity) }}
+                  {{ formatCurrency(item.product.sellingPrice * item.quantity) }}
                 </p>
               </div>
 
@@ -1445,7 +1442,7 @@ onBeforeUnmount(() => {
 
                 <p class="text-sm text-[#46514B]">
                   Transaksi
-                  <strong class="tabular-nums text-[#17201C]">{{ saleSuccess.saleNumber }}</strong>
+                  <strong class="tabular-nums text-[#17201C]">{{ saleSuccess.invoiceNumber }}</strong>
                   tersimpan. Stok berkurang
                   <strong class="tabular-nums text-[#17201C]">{{ soldUnits }}</strong>
                   unit dari
@@ -1462,15 +1459,15 @@ onBeforeUnmount(() => {
               </div>
               <div class="flex justify-between gap-4">
                 <dt class="text-[#46514B]">Metode</dt>
-                <dd>{{ paymentLabel(saleSuccess.paymentMethod) }}</dd>
+                <dd>{{ paymentLabel(saleSuccess.payment.method) }}</dd>
               </div>
               <div class="flex justify-between gap-4">
                 <dt class="text-[#46514B]">Dibayar</dt>
-                <dd class="tabular-nums">{{ formatCurrency(saleSuccess.paidAmount) }}</dd>
+                <dd class="tabular-nums">{{ formatCurrency(saleSuccess.payment.amount) }}</dd>
               </div>
               <div class="flex justify-between gap-4 border-t border-[#E6EBE8] pt-2 text-base">
                 <dt class="font-medium">Kembalian</dt>
-                <dd class="font-bold tabular-nums text-[#12372A]">{{ formatCurrency(saleSuccess.changeAmount) }}</dd>
+                <dd class="font-bold tabular-nums text-[#12372A]">{{ formatCurrency(saleSuccess.payment.change) }}</dd>
               </div>
             </dl>
           </div>
@@ -1520,6 +1517,23 @@ onBeforeUnmount(() => {
               {{ formatCurrency(cartTotal) }}
             </p>
           </div>
+
+          <!-- Diskon transaksi -->
+          <label class="mt-4 block">
+            <span class="mb-1 block text-xs font-medium text-[#46514B]">Diskon transaksi (Rp)</span>
+            <input
+              v-model.number="discount"
+              type="number"
+              min="0"
+              :max="cartSubtotal"
+              step="100"
+              inputmode="numeric"
+              class="h-10 w-full rounded-lg border border-[#D6DDD9] px-3 text-right tabular-nums focus:border-[#176B4D] focus:outline-none focus:ring-2 focus:ring-[#176B4D]/30"
+              :aria-invalid="Boolean(discountError)"
+              @input="paymentMethod !== 'CASH' ? (paidAmount = cartTotal) : undefined"
+            >
+            <span v-if="discountError" class="mt-1 block text-xs text-[#8E2A20]">{{ discountError }}</span>
+          </label>
 
           <!-- PaymentMethodSelector -->
           <fieldset class="mt-5">
@@ -1607,12 +1621,33 @@ onBeforeUnmount(() => {
             </div>
           </div>
 
+          <label v-if="paymentMethod !== 'CASH'" class="mt-4 block">
+            <span class="mb-1 block text-xs font-medium text-[#46514B]">No. referensi (opsional)</span>
+            <input
+              v-model="paymentReference"
+              type="text"
+              maxlength="100"
+              placeholder="Mis. ID transaksi QRIS / EDC"
+              class="h-10 w-full rounded-lg border border-[#D6DDD9] px-3 focus:border-[#176B4D] focus:outline-none focus:ring-2 focus:ring-[#176B4D]/30"
+            >
+          </label>
+
           <!-- Ringkasan: Total / Bayar / Kembalian -->
           <dl
             id="payment-summary"
             class="mt-5 space-y-2 rounded-lg border border-[#E6EBE8] bg-[#F8FAF9] p-4 text-sm"
             aria-live="polite"
           >
+            <div v-if="discount > 0" class="flex justify-between gap-4">
+              <dt class="text-[#46514B]">Subtotal</dt>
+              <dd class="tabular-nums">{{ formatCurrency(cartSubtotal) }}</dd>
+            </div>
+
+            <div v-if="discount > 0" class="flex justify-between gap-4">
+              <dt class="text-[#46514B]">Diskon</dt>
+              <dd class="tabular-nums">-{{ formatCurrency(discount) }}</dd>
+            </div>
+
             <div class="flex justify-between gap-4">
               <dt class="text-[#46514B]">Total</dt>
               <dd class="font-semibold tabular-nums">{{ formatCurrency(cartTotal) }}</dd>
@@ -1707,7 +1742,7 @@ onBeforeUnmount(() => {
       <div class="space-y-1 text-xs">
         <div class="flex justify-between gap-4">
           <span>Transaksi</span>
-          <span class="font-medium">{{ saleSuccess.saleNumber }}</span>
+          <span class="font-medium">{{ saleSuccess.invoiceNumber }}</span>
         </div>
 
         <div class="flex justify-between gap-4">
@@ -1732,7 +1767,7 @@ onBeforeUnmount(() => {
           <div class="mt-1 flex justify-between gap-4 text-xs text-slate-600">
             <span>
               {{ item.quantity }} {{ item.unit }} ×
-              {{ formatCurrency(item.unitPrice) }}
+              {{ formatCurrency(item.price) }}
             </span>
 
             <span class="font-medium text-slate-900">
@@ -1750,6 +1785,11 @@ onBeforeUnmount(() => {
           <span>{{ formatCurrency(saleSuccess.subtotal) }}</span>
         </div>
 
+        <div v-if="saleSuccess.discount > 0" class="flex justify-between">
+          <span>Diskon</span>
+          <span>-{{ formatCurrency(saleSuccess.discount) }}</span>
+        </div>
+
         <div class="flex justify-between font-bold">
           <span>Total</span>
           <span>{{ formatCurrency(saleSuccess.total) }}</span>
@@ -1757,17 +1797,17 @@ onBeforeUnmount(() => {
 
         <div class="flex justify-between">
           <span>Pembayaran</span>
-          <span>{{ paymentLabel(saleSuccess.paymentMethod) }}</span>
+          <span>{{ paymentLabel(saleSuccess.payment.method) }}</span>
         </div>
 
         <div class="flex justify-between">
           <span>Dibayar</span>
-          <span>{{ formatCurrency(saleSuccess.paidAmount) }}</span>
+          <span>{{ formatCurrency(saleSuccess.payment.amount) }}</span>
         </div>
 
         <div class="flex justify-between font-semibold">
           <span>Kembalian</span>
-          <span>{{ formatCurrency(saleSuccess.changeAmount) }}</span>
+          <span>{{ formatCurrency(saleSuccess.payment.change) }}</span>
         </div>
       </div>
 
@@ -1775,8 +1815,8 @@ onBeforeUnmount(() => {
         v-if="saleSuccess.memberId"
         class="mt-4 border-t border-dashed border-slate-300 pt-3 text-xs"
       >
-        <span class="text-slate-500">Member:</span>
-        {{ saleSuccess.memberId }}
+        <span class="text-slate-500">Anggota:</span>
+        {{ saleSuccess.memberNumber }} - {{ saleSuccess.memberName }}
       </div>
 
       <div class="mt-6 text-center text-xs text-slate-500">

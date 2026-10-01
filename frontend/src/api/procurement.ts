@@ -137,15 +137,17 @@ export async function updatePurchaseOrder(
 async function runPurchaseOrderAction(
   accessToken: string,
   purchaseOrderId: string,
-  action: 'submit' | 'approve' | 'order' | 'cancel',
+  action: 'submit' | 'approve' | 'reject' | 'order' | 'cancel' | 'complete',
 ): Promise<PurchaseOrder> {
   const response = await fetch(
     `/api/purchase-orders/${purchaseOrderId}/${action}`,
     {
       method: 'POST',
       headers: {
+        'Content-Type': 'application/json',
         Authorization: `Bearer ${accessToken}`,
       },
+      body: '{}',
     },
   )
 
@@ -192,6 +194,21 @@ export async function orderPurchaseOrder(
     purchaseOrderId,
     'order',
   )
+}
+
+export async function rejectPurchaseOrder(
+  accessToken: string,
+  purchaseOrderId: string,
+): Promise<PurchaseOrder> {
+  return runPurchaseOrderAction(accessToken, purchaseOrderId, 'reject')
+}
+
+/** Menutup PO yang sudah diterima (penuh/sebagian) menjadi COMPLETED. */
+export async function completePurchaseOrder(
+  accessToken: string,
+  purchaseOrderId: string,
+): Promise<PurchaseOrder> {
+  return runPurchaseOrderAction(accessToken, purchaseOrderId, 'complete')
 }
 
 export async function cancelPurchaseOrder(

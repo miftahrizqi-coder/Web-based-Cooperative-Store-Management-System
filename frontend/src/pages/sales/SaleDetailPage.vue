@@ -1,488 +1,196 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
-import { getSaleDetail } from '../../api/pos'
-import type { SaleResponse } from '../../types/pos'
+import { computed, onMounted, ref } from 'vue'
+import { RouterLink, useRoute } from 'vue-router'
+import { getReturns } from '../../api/returns'
+import { cancelSale, getSale } from '../../api/sales'
+import SaleReceipt from '../../components/sales/SaleReceipt.vue'
+import { errorMessage } from '../../services/api'
+import { useAuth } from '../../stores/auth'
+import { RETURN_STATUS_LABELS, type ReturnRecord } from '../../types/returns'
+import { PAYMENT_METHOD_LABELS, type Sale } from '../../types/sale'
+import { formatCurrency, formatDateTime, formatNumber } from '../../utils/format'
 
 const route = useRoute()
-const router = useRouter()
+const { hasRole } = useAuth()
+const saleId = computed(() => String(route.params.id))
 
-const sale = ref<SaleResponse | null>(null)
+const sale = ref<Sale | null>(null)
+const returns = ref<ReturnRecord[]>([])
 const isLoading = ref(true)
-const errorMessage = ref('')
+const loadError = ref('')
+const actionError = ref('')
+const cancelling = ref(false)
 
-const accessToken = localStorage.getItem('access_token')
+const canCancel = computed(() => sale.value?.status === 'COMPLETED' && hasRole('admin', 'pengurus'))
+const canReturn = computed(
+  () =>
+    sale.value?.status === 'COMPLETED' &&
+    sale.value.items.some((item) => item.returnedQuantity < item.quantity),
+)
+const showCost = computed(() => hasRole('admin', 'pengurus'))
 
-function formatCurrency(value: number) {
-  return new Intl.NumberFormat('id-ID', {
-    style: 'currency',
-    currency: 'IDR',
-    maximumFractionDigits: 0,
-  }).format(value)
-}
-
-function formatDate(value: string) {
-  const date = new Date(value)
-
-  if (Number.isNaN(date.getTime())) {
-    return '-'
-  }
-
-  return new Intl.DateTimeFormat('id-ID', {
-    dateStyle: 'long',
-    timeStyle: 'short',
-  }).format(date)
-}
-
-function getPaymentMethodLabel(
-  method: SaleResponse['paymentMethod'],
-) {
-  const labels: Record<SaleResponse['paymentMethod'], string> = {
-    CASH: 'Tunai',
-    BANK_TRANSFER: 'Transfer Bank',
-    DEBIT: 'Debit',
-    OTHER: 'Lainnya',
-  }
-
-  return labels[method]
-}
-
-function getStatusLabel(status: SaleResponse['status']) {
-  return status === 'CANCELLED'
-    ? 'Dibatalkan'
-    : 'Lunas'
-}
-
-function goBack() {
-  router.push('/sales')
-}
-
-async function loadSaleDetail() {
-  errorMessage.value = ''
+async function load() {
   isLoading.value = true
-  sale.value = null
-
+  loadError.value = ''
   try {
-    if (!accessToken) {
-      throw new Error('Sesi login tidak ditemukan.')
-    }
-
-    const saleId = route.params.id
-
-    if (typeof saleId !== 'string' || !saleId.trim()) {
-      throw new Error('ID transaksi tidak valid.')
-    }
-
-    sale.value = await getSaleDetail(
-      accessToken,
-      saleId,
-    )
+    sale.value = await getSale(saleId.value)
+    returns.value = (await getReturns({ saleId: saleId.value, pageSize: 50 })).items
   } catch (error) {
-    errorMessage.value =
-      error instanceof Error
-        ? error.message
-        : 'Gagal memuat detail transaksi.'
+    loadError.value = errorMessage(error, 'Gagal memuat transaksi.')
   } finally {
     isLoading.value = false
   }
 }
 
-onMounted(loadSaleDetail)
+async function cancel() {
+  if (!sale.value) return
+  const reason = window.prompt(
+    `Batalkan transaksi ${sale.value.invoiceNumber}? Stok akan dikembalikan.\nAlasan pembatalan:`,
+  )
+  if (reason === null) return
+  cancelling.value = true
+  actionError.value = ''
+  try {
+    await cancelSale(sale.value.id, reason.trim() || null)
+    await load()
+  } catch (error) {
+    actionError.value = errorMessage(error, 'Gagal membatalkan transaksi.')
+  } finally {
+    cancelling.value = false
+  }
+}
+
+function print() {
+  window.print()
+}
+
+onMounted(load)
 </script>
 
 <template>
-  <main class="space-y-6">
-    <!-- Header -->
-    <section>
-      <button
-        type="button"
-        class="inline-flex min-h-10 items-center gap-2 rounded-lg px-2 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2"
-        @click="goBack"
-      >
-        <svg
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          class="h-4 w-4"
-          aria-hidden="true"
-        >
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            d="m15 18-6-6 6-6"
-          />
-        </svg>
-
-        Kembali ke riwayat penjualan
-      </button>
-
-      <div class="mt-4">
-        <p class="text-sm font-medium text-emerald-700">
-          Penjualan
-        </p>
-
-        <h1 class="text-2xl font-bold tracking-tight text-slate-900">
-          Detail Transaksi
-        </h1>
-
-        <p class="mt-1 text-sm text-slate-500">
-          Detail transaksi penjualan dan pembayaran.
-        </p>
-      </div>
-    </section>
-
-    <!-- Loading -->
-    <section
-      v-if="isLoading"
-      class="space-y-6"
-      aria-label="Memuat detail transaksi"
-    >
-      <div class="rounded-xl border border-slate-200 bg-white p-6">
-        <div class="h-6 w-48 animate-pulse rounded bg-slate-200" />
-        <div class="mt-3 h-4 w-64 animate-pulse rounded bg-slate-200" />
-
-        <div class="mt-6 grid gap-4 sm:grid-cols-3">
-          <div
-            v-for="index in 3"
-            :key="index"
-            class="h-16 animate-pulse rounded-lg bg-slate-100"
-          />
-        </div>
-      </div>
-
-      <div class="rounded-xl border border-slate-200 bg-white">
-        <div class="border-b border-slate-200 p-6">
-          <div class="h-5 w-32 animate-pulse rounded bg-slate-200" />
-        </div>
-
-        <div class="space-y-4 p-6">
-          <div
-            v-for="index in 4"
-            :key="index"
-            class="h-12 animate-pulse rounded bg-slate-100"
-          />
-        </div>
-      </div>
-    </section>
-
-    <!-- Error -->
-    <section
-      v-else-if="errorMessage"
-      class="rounded-xl border border-red-200 bg-red-50 p-6"
-      role="alert"
-    >
-      <h2 class="font-semibold text-red-800">
-        Detail transaksi gagal dimuat
-      </h2>
-
-      <p class="mt-1 text-sm text-red-700">
-        {{ errorMessage }}
-      </p>
-
-      <div class="mt-4 flex flex-wrap gap-3">
-        <button
-          type="button"
-          class="inline-flex min-h-11 items-center justify-center rounded-lg bg-red-700 px-4 py-2 text-sm font-medium text-white transition hover:bg-red-800 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
-          @click="loadSaleDetail"
-        >
-          Coba lagi
-        </button>
-
-        <button
-          type="button"
-          class="inline-flex min-h-11 items-center justify-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2"
-          @click="goBack"
-        >
-          Kembali
-        </button>
-      </div>
-    </section>
-
-    <!-- Detail -->
-    <template v-else-if="sale">
-      <!-- Summary -->
-      <section
-        class="rounded-xl border border-slate-200 bg-white p-5 sm:p-6"
-      >
-        <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Nomor transaksi
-            </p>
-
-            <h2 class="mt-1 text-xl font-bold text-slate-900">
-              {{ sale.saleNumber }}
-            </h2>
-
-            <p class="mt-1 text-sm text-slate-500">
-              {{ formatDate(sale.createdAt) }}
-            </p>
-          </div>
-
-          <span
-            class="inline-flex w-fit rounded-full px-3 py-1.5 text-sm font-semibold"
-            :class="
-              sale.status === 'CANCELLED'
-                ? 'bg-red-100 text-red-700'
-                : 'bg-emerald-100 text-emerald-700'
-            "
-          >
-            {{ getStatusLabel(sale.status) }}
-          </span>
-        </div>
-
-        <div class="mt-6 grid gap-4 sm:grid-cols-3">
-          <div class="rounded-lg bg-slate-50 p-4">
-            <p class="text-xs font-medium text-slate-500">
-              Jumlah item
-            </p>
-
-            <p class="mt-1 text-lg font-bold text-slate-900">
-              {{ sale.items.length }} item
-            </p>
-          </div>
-
-          <div class="rounded-lg bg-slate-50 p-4">
-            <p class="text-xs font-medium text-slate-500">
-              Metode pembayaran
-            </p>
-
-            <p class="mt-1 text-lg font-bold text-slate-900">
-              {{ getPaymentMethodLabel(sale.paymentMethod) }}
-            </p>
-          </div>
-
-          <div class="rounded-lg bg-slate-50 p-4">
-            <p class="text-xs font-medium text-slate-500">
-              Total
-            </p>
-
-            <p class="mt-1 text-lg font-bold text-slate-900">
-              {{ formatCurrency(sale.total) }}
-            </p>
-          </div>
-        </div>
-      </section>
-
-      <!-- Member -->
-      <section
-        class="rounded-xl border border-slate-200 bg-white p-5 sm:p-6"
-      >
-        <h2 class="text-base font-semibold text-slate-900">
-          Anggota
-        </h2>
-
-        <div class="mt-4 rounded-lg bg-slate-50 p-4">
-          <p
-            v-if="sale.memberId"
-            class="break-all text-sm text-slate-700"
-          >
-            Member ID:
-            <span class="font-medium">
-              {{ sale.memberId }}
-            </span>
-          </p>
-
-          <p
-            v-else
-            class="text-sm text-slate-500"
-          >
-            Transaksi ini tidak menggunakan anggota.
+  <main class="page">
+    <div class="page-inner">
+      <header class="page-header no-print">
+        <div>
+          <nav class="breadcrumb" aria-label="Breadcrumb">
+            <RouterLink to="/sales">Riwayat Penjualan</RouterLink><span>/</span><span aria-current="page">Detail</span>
+          </nav>
+          <h1 class="page-title mono">{{ sale?.invoiceNumber || 'Detail transaksi' }}</h1>
+          <p v-if="sale" class="page-subtitle">
+            {{ formatDateTime(sale.createdAt) }} · Kasir {{ sale.cashierName || '-' }}
           </p>
         </div>
-      </section>
-
-      <!-- Items -->
-      <section
-        class="overflow-hidden rounded-xl border border-slate-200 bg-white"
-      >
-        <div class="border-b border-slate-200 px-5 py-4 sm:px-6">
-          <h2 class="font-semibold text-slate-900">
-            Item Penjualan
-          </h2>
-        </div>
-
-        <!-- Desktop -->
-        <div class="hidden overflow-x-auto md:block">
-          <table class="min-w-full divide-y divide-slate-200">
-            <thead class="bg-slate-50">
-              <tr>
-                <th
-                  scope="col"
-                  class="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500"
-                >
-                  Produk
-                </th>
-
-                <th
-                  scope="col"
-                  class="px-6 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500"
-                >
-                  Qty
-                </th>
-
-                <th
-                  scope="col"
-                  class="px-6 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500"
-                >
-                  Harga
-                </th>
-
-                <th
-                  scope="col"
-                  class="px-6 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500"
-                >
-                  Subtotal
-                </th>
-              </tr>
-            </thead>
-
-            <tbody class="divide-y divide-slate-100">
-              <tr
-                v-for="item in sale.items"
-                :key="`${sale.id}-${item.productId}`"
-              >
-                <td class="px-6 py-4">
-                  <p class="font-medium text-slate-900">
-                    {{ item.name }}
-                  </p>
-
-                  <p class="mt-1 text-xs text-slate-500">
-                    {{ item.sku }} · {{ item.unit }}
-                  </p>
-                </td>
-
-                <td class="whitespace-nowrap px-6 py-4 text-right text-sm text-slate-600">
-                  {{ item.quantity }}
-                </td>
-
-                <td class="whitespace-nowrap px-6 py-4 text-right text-sm text-slate-600">
-                  {{ formatCurrency(item.unitPrice) }}
-                </td>
-
-                <td class="whitespace-nowrap px-6 py-4 text-right text-sm font-semibold text-slate-900">
-                  {{ formatCurrency(item.subtotal) }}
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        <!-- Mobile -->
-        <div class="divide-y divide-slate-200 md:hidden">
-          <article
-            v-for="item in sale.items"
-            :key="`${sale.id}-${item.productId}`"
-            class="space-y-3 p-4"
+        <div v-if="sale" class="header-actions">
+          <button type="button" class="btn btn-secondary" @click="print">Cetak struk</button>
+          <RouterLink
+            v-if="canReturn"
+            :to="{ path: '/returns/create', query: { type: 'SALE', saleId: sale.id } }"
+            class="btn btn-outline"
           >
-            <div>
-              <h3 class="font-medium text-slate-900">
-                {{ item.name }}
-              </h3>
-
-              <p class="mt-1 text-xs text-slate-500">
-                {{ item.sku }} · {{ item.unit }}
-              </p>
-            </div>
-
-            <dl class="grid grid-cols-3 gap-3 text-sm">
-              <div>
-                <dt class="text-xs text-slate-500">
-                  Qty
-                </dt>
-
-                <dd class="mt-1 font-medium text-slate-800">
-                  {{ item.quantity }}
-                </dd>
-              </div>
-
-              <div>
-                <dt class="text-xs text-slate-500">
-                  Harga
-                </dt>
-
-                <dd class="mt-1 font-medium text-slate-800">
-                  {{ formatCurrency(item.unitPrice) }}
-                </dd>
-              </div>
-
-              <div class="text-right">
-                <dt class="text-xs text-slate-500">
-                  Subtotal
-                </dt>
-
-                <dd class="mt-1 font-semibold text-slate-900">
-                  {{ formatCurrency(item.subtotal) }}
-                </dd>
-              </div>
-            </dl>
-          </article>
+            Ajukan retur
+          </RouterLink>
+          <button v-if="canCancel" type="button" class="btn btn-danger" :disabled="cancelling" @click="cancel">
+            {{ cancelling ? 'Membatalkan…' : 'Batalkan transaksi' }}
+          </button>
         </div>
-      </section>
+      </header>
 
-      <!-- Payment -->
-      <section
-        class="rounded-xl border border-slate-200 bg-white p-5 sm:p-6"
-      >
-        <h2 class="text-base font-semibold text-slate-900">
-          Ringkasan Pembayaran
-        </h2>
+      <div v-if="loadError" class="alert alert-error no-print">{{ loadError }}</div>
+      <div v-if="actionError" class="alert alert-error no-print" role="alert">{{ actionError }}</div>
+      <div v-if="isLoading" class="skeleton" style="height: 200px" />
 
-        <dl class="mt-4 space-y-3 text-sm">
-          <div class="flex items-center justify-between gap-4">
-            <dt class="text-slate-500">
-              Subtotal
-            </dt>
+      <template v-else-if="sale">
+        <div v-if="sale.status === 'CANCELLED'" class="alert alert-warning no-print">
+          Transaksi dibatalkan {{ formatDateTime(sale.cancelledAt) }}{{ sale.cancelReason ? `: ${sale.cancelReason}` : '' }}.
+          Stok yang belum diretur sudah dikembalikan.
+        </div>
 
-            <dd class="font-medium text-slate-900">
-              {{ formatCurrency(sale.subtotal) }}
-            </dd>
-          </div>
-
-          <div class="flex items-center justify-between gap-4">
-            <dt class="text-slate-500">
-              Total
-            </dt>
-
-            <dd class="font-bold text-slate-900">
-              {{ formatCurrency(sale.total) }}
-            </dd>
-          </div>
-
-          <div class="flex items-center justify-between gap-4">
-            <dt class="text-slate-500">
-              Dibayar
-            </dt>
-
-            <dd class="font-medium text-slate-900">
-              {{ formatCurrency(sale.paidAmount) }}
-            </dd>
-          </div>
-
-          <div class="flex items-center justify-between gap-4">
-            <dt class="text-slate-500">
-              Kembalian
-            </dt>
-
-            <dd class="font-medium text-slate-900">
-              {{ formatCurrency(sale.changeAmount) }}
-            </dd>
-          </div>
-
-          <div class="border-t border-slate-200 pt-3">
-            <div class="flex items-center justify-between gap-4">
-              <dt class="font-semibold text-slate-900">
-                Metode pembayaran
-              </dt>
-
-              <dd class="font-semibold text-slate-900">
-                {{ getPaymentMethodLabel(sale.paymentMethod) }}
-              </dd>
+        <div class="no-print" style="display: grid; gap: 20px; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr))">
+          <section class="card">
+            <div class="card-header"><h2 class="card-title">Item</h2></div>
+            <div class="table-wrap">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>Produk</th>
+                    <th class="num">Qty</th>
+                    <th class="num">Harga</th>
+                    <th v-if="showCost" class="num">HPP</th>
+                    <th class="num">Subtotal</th>
+                    <th class="num">Diretur</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="item in sale.items" :key="item.productId">
+                    <td>{{ item.name }}<div class="mono muted">{{ item.sku }}</div></td>
+                    <td class="num">{{ formatNumber(item.quantity) }} {{ item.unit }}</td>
+                    <td class="num">{{ formatCurrency(item.price) }}</td>
+                    <td v-if="showCost" class="num muted">{{ formatCurrency(item.costPrice ?? 0) }}</td>
+                    <td class="num">{{ formatCurrency(item.subtotal) }}</td>
+                    <td class="num">{{ item.returnedQuantity ? formatNumber(item.returnedQuantity) : '-' }}</td>
+                  </tr>
+                </tbody>
+                <tfoot>
+                  <tr><td :colspan="showCost ? 4 : 3">Subtotal</td><td class="num">{{ formatCurrency(sale.subtotal) }}</td><td /></tr>
+                  <tr v-if="sale.discount > 0"><td :colspan="showCost ? 4 : 3">Diskon</td><td class="num">-{{ formatCurrency(sale.discount) }}</td><td /></tr>
+                  <tr><td :colspan="showCost ? 4 : 3">Total</td><td class="num">{{ formatCurrency(sale.total) }}</td><td /></tr>
+                </tfoot>
+              </table>
             </div>
+          </section>
+
+          <section class="card">
+            <div class="card-header"><h2 class="card-title">Pembayaran</h2></div>
+            <div class="card-body">
+              <dl class="dl" style="grid-template-columns: 1fr 1fr">
+                <div><dt>Status</dt><dd>
+                  <span class="badge" :class="sale.status === 'COMPLETED' ? 'badge-success' : 'badge-danger'">
+                    {{ sale.status === 'COMPLETED' ? 'Selesai' : 'Dibatalkan' }}
+                  </span>
+                </dd></div>
+                <div><dt>Metode</dt><dd>{{ PAYMENT_METHOD_LABELS[sale.payment.method] }}</dd></div>
+                <div><dt>Dibayar</dt><dd>{{ formatCurrency(sale.payment.amount) }}</dd></div>
+                <div><dt>Kembalian</dt><dd>{{ formatCurrency(sale.payment.change) }}</dd></div>
+                <div v-if="sale.payment.referenceNumber"><dt>Referensi</dt><dd class="mono">{{ sale.payment.referenceNumber }}</dd></div>
+                <div><dt>Anggota</dt><dd>
+                  <RouterLink v-if="sale.memberId && hasRole('admin', 'pengurus')" :to="`/members/${sale.memberId}`">
+                    {{ sale.memberNumber }} · {{ sale.memberName }}
+                  </RouterLink>
+                  <span v-else>{{ sale.memberName ? `${sale.memberNumber} · ${sale.memberName}` : '-' }}</span>
+                </dd></div>
+              </dl>
+            </div>
+          </section>
+        </div>
+
+        <section v-if="returns.length" class="card no-print">
+          <div class="card-header"><h2 class="card-title">Retur untuk transaksi ini</h2></div>
+          <div class="table-wrap">
+            <table class="table">
+              <thead><tr><th>Nomor</th><th>Tanggal</th><th>Item</th><th class="num">Nilai</th><th>Status</th></tr></thead>
+              <tbody>
+                <tr v-for="ret in returns" :key="ret.id">
+                  <td class="mono">{{ ret.returnNumber }}</td>
+                  <td>{{ formatDateTime(ret.createdAt) }}</td>
+                  <td class="small">{{ ret.items.map((i) => `${i.name} × ${formatNumber(i.quantity)}`).join(', ') }}</td>
+                  <td class="num">{{ formatCurrency(ret.totalAmount) }}</td>
+                  <td><span class="badge" :class="ret.status === 'APPROVED' ? 'badge-success' : ret.status === 'REJECTED' ? 'badge-danger' : 'badge-warning'">{{ RETURN_STATUS_LABELS[ret.status] }}</span></td>
+                </tr>
+              </tbody>
+            </table>
           </div>
-        </dl>
-      </section>
-    </template>
+        </section>
+
+        <div class="print-area" style="display: none">
+          <SaleReceipt :sale="sale" />
+        </div>
+      </template>
+    </div>
   </main>
 </template>
+
+<style scoped>
+@media print {
+  .print-area { display: block !important; }
+}
+</style>

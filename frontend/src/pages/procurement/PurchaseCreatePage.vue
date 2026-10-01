@@ -624,7 +624,7 @@ onMounted(loadData)
                   </dt>
 
                   <dd class="mt-1 break-all text-sm font-medium text-[#17201C]">
-                    {{ goodsReceipt.supplierId }}
+                    {{ goodsReceipt.supplierName || goodsReceipt.supplierId }}
                   </dd>
                 </div>
               </dl>

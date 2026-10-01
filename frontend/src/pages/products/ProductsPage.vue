@@ -1,23 +1,23 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { getProducts, deactivateProduct } from '../../api/products'
+import { getCategories } from '../../api/categories'
+import type { Category } from '../../types/category'
 import { useAuth } from '../../stores/auth'
 import type { Product, ProductStockStatus } from '../../types/product'
-import { getCategories } from '../../api/categories'
-import type { Category } from '../../api/categories'
 
 const router = useRouter()
+const route = useRoute()
 const { token } = useAuth()
 
-const categories = ref<Category[]>([])
-const isLoadingCategories = ref(false)
 const products = ref<Product[]>([])
 const isLoading = ref(true)
 const errorMessage = ref('')
 const actionError = ref('')
 const search = ref('')
 const categoryId = ref('')
+const categories = ref<Category[]>([])
 const stockStatus = ref<ProductStockStatus>('all')
 const deletingProductId = ref<string | null>(null)
 
@@ -147,17 +147,17 @@ function formatCurrency(value: number) {
 }
 
 function stockLabel(product: Product) {
-  if (product.stock === 0) return 'Habis'
-  if (product.stock <= product.minimum_stock) return 'Menipis'
+  if (product.stock <= 0) return 'Habis'
+  if (product.stock <= product.minimumStock) return 'Menipis'
   return 'Tersedia'
 }
 
 function stockBadgeClass(product: Product) {
-  if (product.stock === 0) {
+  if (product.stock <= 0) {
     return 'border-[#E8B9B3] bg-[#FDF0EE] text-[#C0392B]'
   }
 
-  if (product.stock <= product.minimum_stock) {
+  if (product.stock <= product.minimumStock) {
     return 'border-[#E8D2A7] bg-[#FFF7E8] text-[#9A650F]'
   }
 
@@ -165,38 +165,21 @@ function stockBadgeClass(product: Product) {
 }
 
 function activeBadgeClass(product: Product) {
-  return product.is_active
+  return product.isActive
     ? 'border-[#B9DEC9] bg-[#F0F8F5] text-[#16834B]'
     : 'border-[#D6DDD9] bg-[#F1F4F2] text-[#6B756F]'
 }
 
-async function loadCategories() {
-  if (!token.value) {
-    return
-  }
-
-  isLoadingCategories.value = true
-
-  try {
-    categories.value = await getCategories(
-      token.value,
-      true,
-    )
-  } catch (error) {
-    errorMessage.value =
-      error instanceof Error
-        ? error.message
-        : 'Gagal mengambil data Category.'
-  } finally {
-    isLoadingCategories.value = false
-  }
-}
-
 onMounted(async () => {
-  await Promise.all([
-    loadProducts(),
-    loadCategories(),
-  ])
+  if (typeof route.query.categoryId === 'string') {
+    categoryId.value = route.query.categoryId
+  }
+  try {
+    categories.value = await getCategories()
+  } catch {
+    categories.value = []
+  }
+  await loadProducts()
 })
 </script>
 
@@ -283,31 +266,15 @@ onMounted(async () => {
             <span class="mb-1.5 block text-[13px] font-medium leading-[18px] text-[#46514B]">
               Kategori
             </span>
-              <div>
-                <select
-                  id="category-filter"
-                  v-model="categoryId"
-                  :disabled="isLoadingCategories"
-                  class="min-h-10 w-full rounded-md border border-[#D6DDD9] bg-white px-3 text-[14px] text-[#17201C] outline-none focus:border-[#176B4D] focus:ring-2 focus:ring-[#176B4D] disabled:cursor-not-allowed disabled:bg-[#F1F4F2]"
-                  @change="loadProducts"
-                >
-                  <option value="">
-                    {{
-                      isLoadingCategories
-                        ? 'Memuat kategori...'
-                        : 'Semua kategori'
-                    }}
-                  </option>
-
-                  <option
-                    v-for="category in categories"
-                    :key="category.id"
-                    :value="category.id"
-                  >
-                    {{ category.name }}
-                  </option>
-                </select>
-              </div>
+            <select
+              v-model="categoryId"
+              class="h-10 w-full rounded-lg border border-[#D6DDD9] bg-white px-3 text-[14px] leading-5 text-[#17201C] outline-none transition focus:border-[#176B4D] focus:ring-2 focus:ring-[#176B4D] focus:ring-offset-2"
+            >
+              <option value="">Semua kategori</option>
+              <option v-for="category in categories" :key="category.id" :value="category.id">
+                {{ category.name }}{{ category.isActive ? '' : ' (nonaktif)' }}
+              </option>
+            </select>
           </label>
 
           <label class="block">
@@ -513,7 +480,7 @@ onMounted(async () => {
                       {{ product.name }}
                     </button>
                     <p class="mt-0.5 text-[13px] leading-[18px] text-[#6B756F]">
-                      Satuan: {{ product.unit }}
+                      {{ product.categoryName || 'Tanpa kategori' }} · Satuan: {{ product.unit }}
                     </p>
                   </div>
                 </td>
@@ -526,7 +493,7 @@ onMounted(async () => {
 
                 <td class="px-5 py-4 text-right align-middle">
                   <span class="whitespace-nowrap text-[14px] font-medium leading-5 text-[#17201C]">
-                    {{ formatCurrency(product.selling_price) }}
+                    {{ formatCurrency(product.sellingPrice) }}
                   </span>
                 </td>
 
@@ -535,7 +502,7 @@ onMounted(async () => {
                     {{ product.stock }} {{ product.unit }}
                   </span>
                   <span class="mt-0.5 block text-[12px] leading-4 text-[#6B756F]">
-                    Min. {{ product.minimum_stock }}
+                    Min. {{ product.minimumStock }}
                   </span>
                 </td>
 
@@ -545,10 +512,10 @@ onMounted(async () => {
                       class="inline-flex rounded-full border px-2.5 py-1 text-[12px] font-medium leading-4"
                       :class="activeBadgeClass(product)"
                     >
-                      {{ product.is_active ? 'Aktif' : 'Nonaktif' }}
+                      {{ product.isActive ? 'Aktif' : 'Nonaktif' }}
                     </span>
                     <span
-                      v-if="product.is_active"
+                      v-if="product.isActive"
                       class="inline-flex rounded-full border px-2.5 py-1 text-[12px] font-medium leading-4"
                       :class="stockBadgeClass(product)"
                     >
@@ -574,7 +541,7 @@ onMounted(async () => {
                       Edit
                     </button>
                     <button
-                      v-if="product.is_active"
+                      v-if="product.isActive"
                       type="button"
                       :disabled="deletingProductId === product.id"
                       class="rounded-md border border-[#E8B9B3] bg-white px-3 py-1.5 text-[13px] font-medium leading-[18px] text-[#C0392B] hover:bg-[#FDF0EE] disabled:cursor-not-allowed disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-[#C0392B] focus:ring-offset-2"
@@ -615,10 +582,10 @@ onMounted(async () => {
                   class="inline-flex rounded-full border px-2 py-1 text-[11px] font-medium leading-4"
                   :class="activeBadgeClass(product)"
                 >
-                  {{ product.is_active ? 'Aktif' : 'Nonaktif' }}
+                  {{ product.isActive ? 'Aktif' : 'Nonaktif' }}
                 </span>
                 <span
-                  v-if="product.is_active"
+                  v-if="product.isActive"
                   class="inline-flex rounded-full border px-2 py-1 text-[11px] font-medium leading-4"
                   :class="stockBadgeClass(product)"
                 >
@@ -631,7 +598,7 @@ onMounted(async () => {
               <div>
                 <dt class="text-[12px] leading-4 text-[#6B756F]">Harga jual</dt>
                 <dd class="mt-0.5 text-[14px] font-medium leading-5 text-[#17201C]">
-                  {{ formatCurrency(product.selling_price) }}
+                  {{ formatCurrency(product.sellingPrice) }}
                 </dd>
               </div>
               <div class="text-right">
@@ -643,7 +610,7 @@ onMounted(async () => {
               <div>
                 <dt class="text-[12px] leading-4 text-[#6B756F]">Minimum stok</dt>
                 <dd class="mt-0.5 text-[13px] leading-[18px] text-[#46514B]">
-                  {{ product.minimum_stock }} {{ product.unit }}
+                  {{ product.minimumStock }} {{ product.unit }}
                 </dd>
               </div>
             </dl>
@@ -664,7 +631,7 @@ onMounted(async () => {
                 Edit
               </button>
               <button
-                v-if="product.is_active"
+                v-if="product.isActive"
                 type="button"
                 :disabled="deletingProductId === product.id"
                 class="rounded-md border border-[#E8B9B3] bg-white px-3 py-1.5 text-[13px] font-medium leading-[18px] text-[#C0392B] hover:bg-[#FDF0EE] disabled:cursor-not-allowed disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-[#C0392B] focus:ring-offset-2"

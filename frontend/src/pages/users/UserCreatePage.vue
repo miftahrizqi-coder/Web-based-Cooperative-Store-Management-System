@@ -2,6 +2,8 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { createUser } from '../../api/users'
+import { getMembers } from '../../api/members'
+import type { Member } from '../../types/member'
 import { useAuth } from '../../stores/auth'
 import type { UserRole } from '../../types/auth'
 
@@ -21,6 +23,8 @@ const username = ref('')
 const email = ref('')
 const password = ref('')
 const role = ref<UserRole>('kasir')
+const memberId = ref('')
+const members = ref<Member[]>([])
 
 const showPassword = ref(false)
 
@@ -104,6 +108,10 @@ function validateForm(): boolean {
     errors.value.password = `Password minimal ${PASSWORD_MIN} karakter.`
   }
 
+  if (role.value === 'anggota' && !memberId.value) {
+    errors.value.role = 'Pilih data anggota yang ditautkan ke akun ini.'
+  }
+
   if (!role.value) {
     errors.value.role = 'Role wajib dipilih.'
   }
@@ -121,7 +129,16 @@ watch(name, () => (errors.value.name = ''))
 watch(username, () => (errors.value.username = ''))
 watch(email, () => (errors.value.email = ''))
 watch(password, () => (errors.value.password = ''))
-watch(role, () => (errors.value.role = ''))
+watch(role, async (value) => {
+  errors.value.role = ''
+  if (value === 'anggota' && members.value.length === 0) {
+    try {
+      members.value = await getMembers({ status: 'ACTIVE' })
+    } catch {
+      members.value = []
+    }
+  }
+})
 
 /* ---------- Actions ---------- */
 function handleCancel() {
@@ -150,6 +167,7 @@ async function handleSubmit() {
       email: email.value.trim(),
       password: password.value,
       role: role.value,
+      memberId: role.value === 'anggota' ? memberId.value : null,
     })
 
     await router.push(USERS_ROUTE)
@@ -370,6 +388,27 @@ async function handleSubmit() {
                   Ringkasan hak akses role terpilih tampil di panel samping.
                 </p>
               </div>
+
+              <!-- Tautan data anggota (wajib untuk role anggota) -->
+              <div v-if="role === 'anggota'">
+                <label for="member" class="mb-1.5 block text-xs font-medium leading-4 text-[#46514B]">
+                  Data anggota <span class="text-[#C0392B]" aria-hidden="true">*</span>
+                </label>
+                <select
+                  id="member"
+                  v-model="memberId"
+                  class="h-10 w-full rounded-lg border border-[#D6DDD9] bg-white px-3 text-sm text-[#17201C] focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-[#176B4D] sm:max-w-md"
+                >
+                  <option value="" disabled>Pilih anggota</option>
+                  <option v-for="member in members" :key="member.id" :value="member.id">
+                    {{ member.memberNumber }} — {{ member.name }}
+                  </option>
+                </select>
+                <p class="mt-1.5 text-xs leading-4 text-[#6B756F]">
+                  Akun anggota hanya dapat melihat profil & riwayat transaksi anggota yang ditautkan.
+                </p>
+              </div>
+
             </div>
           </fieldset>
         </div>

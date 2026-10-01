@@ -7,4 +7,12 @@ export interface CurrentUser {
   name: string
   role: UserRole
   is_active: boolean
+  memberId: string | null
+}
+
+export const ROLE_LABELS: Record<UserRole, string> = {
+  admin: 'Admin',
+  kasir: 'Kasir',
+  pengurus: 'Pengurus',
+  anggota: 'Anggota',
 }

@@ -231,7 +231,7 @@ onMounted(loadPurchases)
                 </td>
 
                 <td class="px-4 py-4 align-top text-sm text-[#46514B]">
-                  <span class="font-mono text-xs">{{ purchase.supplierId }}</span>
+                  <span class="font-mono text-xs">{{ purchase.supplierName || purchase.supplierId }}</span>
                 </td>
 
                 <td class="px-4 py-4 align-top text-sm text-[#46514B]">

@@ -6,7 +6,7 @@ import { getInventory } from '../../api/inventory'
 import type { InventoryItem, StockStatus } from '../../types/inventory'
 
 /* Sesuaikan dengan route di router Anda */
-const OPNAME_ROUTE = '/inventory/stock-opname'
+const OPNAME_ROUTE = '/inventory/opname'
 const ADJUSTMENT_ROUTE = '/inventory/adjustment'
 const MOVEMENT_ROUTE = '/inventory/movements'
 const PRODUCTS_ROUTE = '/products'
@@ -58,8 +58,8 @@ const summary = computed(() => {
   if (!items) return null
   return {
     total: items.length,
-    low: items.filter((i) => i.stock_status === 'LOW_STOCK').length,
-    out: items.filter((i) => i.stock_status === 'OUT_OF_STOCK').length,
+    low: items.filter((i) => i.stockStatus === 'LOW_STOCK').length,
+    out: items.filter((i) => i.stockStatus === 'OUT_OF_STOCK').length,
   }
 })
 
@@ -140,8 +140,8 @@ function statusDot(status: StockStatus): string {
 }
 
 function shortfallText(item: InventoryItem): string {
-  if (item.stock_status === 'AVAILABLE') return ''
-  const gap = item.minimum_stock - item.stock
+  if (item.stockStatus === 'AVAILABLE') return ''
+  const gap = item.minimumStock - item.stock
   if (gap <= 0) return ''
   return `Kurang ${formatNumber(gap)} ${item.unit} dari minimum`
 }
@@ -176,7 +176,7 @@ async function loadInventory(showSearchLoading = false, force = false): Promise<
   try {
     const result = await getInventory(getAccessToken(), {
       search: search.value.trim() || undefined,
-      stock_status: stockStatus.value || undefined,
+      stockStatus: stockStatus.value || undefined,
     })
 
     if (seq !== requestSeq) return
@@ -300,9 +300,9 @@ onBeforeUnmount(() => {
     <!-- Page header -->
     <header class="mb-6 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
       <div>
-        <h1 class="text-[28px] font-semibold leading-9 text-[#17201C]">Stock</h1>
+        <h1 class="text-[28px] font-semibold leading-9 text-[#17201C]">Stok</h1>
         <p class="mt-1 max-w-2xl text-sm leading-5 text-[#46514B]">
-          Pantau ketersediaan stok produk aktif. Perubahan stock dilakukan lewat stock opname atau
+          Pantau ketersediaan stok produk aktif. Perubahan stok dilakukan lewat stock opname atau
           stock adjustment dan selalu tercatat di riwayat.
         </p>
       </div>
@@ -615,7 +615,7 @@ onBeforeUnmount(() => {
           </thead>
 
           <tbody class="bg-white">
-            <tr v-for="item in pagedInventory" :key="item.product_id" class="hover:bg-[#F8FAF9]">
+            <tr v-for="item in pagedInventory" :key="item.productId" class="hover:bg-[#F8FAF9]">
               <td class="border-b border-[#E6EBE8] px-4 py-3 align-top">
                 <div class="text-sm font-semibold leading-5 text-[#17201C]">{{ item.name }}</div>
                 <div class="text-[13px] leading-[18px] text-[#6B756F]">
@@ -629,10 +629,10 @@ onBeforeUnmount(() => {
               <td class="border-b border-[#E6EBE8] px-4 py-3 align-top">
                 <span
                   class="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-0.5 text-xs font-medium"
-                  :class="statusClass(item.stock_status)"
+                  :class="statusClass(item.stockStatus)"
                 >
-                  <span class="h-1.5 w-1.5 rounded-full" :class="statusDot(item.stock_status)" aria-hidden="true" />
-                  {{ statusLabel(item.stock_status) }}
+                  <span class="h-1.5 w-1.5 rounded-full" :class="statusDot(item.stockStatus)" aria-hidden="true" />
+                  {{ statusLabel(item.stockStatus) }}
                 </span>
                 <p v-if="shortfallText(item)" class="mt-1 text-[13px] leading-[18px] text-[#6B756F]">
                   {{ shortfallText(item) }}
@@ -647,7 +647,7 @@ onBeforeUnmount(() => {
               <td
                 class="hidden whitespace-nowrap border-b border-[#E6EBE8] px-4 py-3 text-right align-top text-sm tabular-nums text-[#46514B] lg:table-cell"
               >
-                {{ formatNumber(item.minimum_stock) }}
+                {{ formatNumber(item.minimumStock) }}
                 <span class="ml-1 text-[13px] text-[#6B756F]">{{ item.unit }}</span>
               </td>
             </tr>
@@ -657,7 +657,7 @@ onBeforeUnmount(() => {
 
       <!-- Cards (mobile) -->
       <div class="divide-y divide-[#E6EBE8] md:hidden" :class="searchLoading ? 'opacity-60' : ''">
-        <article v-for="item in pagedInventory" :key="item.product_id" class="p-4">
+        <article v-for="item in pagedInventory" :key="item.productId" class="p-4">
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0">
               <h3 class="text-sm font-semibold leading-5 text-[#17201C]">{{ item.name }}</h3>
@@ -669,10 +669,10 @@ onBeforeUnmount(() => {
 
             <span
               class="inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium"
-              :class="statusClass(item.stock_status)"
+              :class="statusClass(item.stockStatus)"
             >
-              <span class="h-1.5 w-1.5 rounded-full" :class="statusDot(item.stock_status)" aria-hidden="true" />
-              {{ statusLabel(item.stock_status) }}
+              <span class="h-1.5 w-1.5 rounded-full" :class="statusDot(item.stockStatus)" aria-hidden="true" />
+              {{ statusLabel(item.stockStatus) }}
             </span>
           </div>
 
@@ -687,7 +687,7 @@ onBeforeUnmount(() => {
             <div>
               <dt class="text-xs text-[#6B756F]">Minimum</dt>
               <dd class="mt-0.5 text-sm tabular-nums text-[#46514B]">
-                {{ formatNumber(item.minimum_stock) }}
+                {{ formatNumber(item.minimumStock) }}
                 <span class="text-[13px] text-[#6B756F]">{{ item.unit }}</span>
               </dd>
             </div>

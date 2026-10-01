@@ -1,3 +1,12 @@
+import { api } from '../services/api'
+import type {
+  GoodsReceipt,
+  Purchase,
+  PurchaseOrder,
+  SupplierInvoice,
+  SupplierPayment,
+} from '../types/procurement'
+import type { SupplierProduct } from '../types/supplierProduct'
 import type {
   CreateSupplierRequest,
   Supplier,
@@ -148,3 +157,29 @@ export async function updateSupplierStatus(
 
   return response.json()
 }
+// ---------------------------------------------------------------------------
+// Riwayat & hutang supplier (PRD §12, §33)
+// ---------------------------------------------------------------------------
+
+export interface SupplierSummary {
+  supplierId: string
+  productsSupplied: number
+  purchaseOrderCount: number
+  activePurchaseOrderCount: number
+  receiptCount: number
+  totalPurchases: number
+  invoiceCount: number
+  totalInvoiced: number
+  totalPaid: number
+  totalReturned: number
+  outstanding: number
+  overdueInvoiceCount: number
+}
+
+export const getSupplierSummary = (id: string) => api.get<SupplierSummary>(`/api/suppliers/${id}/summary`)
+export const getSupplierProductsOf = (id: string) => api.get<SupplierProduct[]>(`/api/suppliers/${id}/products`)
+export const getSupplierPurchaseOrders = (id: string) => api.get<PurchaseOrder[]>(`/api/suppliers/${id}/purchase-orders`)
+export const getSupplierReceipts = (id: string) => api.get<GoodsReceipt[]>(`/api/suppliers/${id}/goods-receipts`)
+export const getSupplierPurchases = (id: string) => api.get<Purchase[]>(`/api/suppliers/${id}/purchases`)
+export const getSupplierInvoicesOf = (id: string) => api.get<SupplierInvoice[]>(`/api/suppliers/${id}/invoices`)
+export const getSupplierPaymentsOf = (id: string) => api.get<SupplierPayment[]>(`/api/suppliers/${id}/payments`)

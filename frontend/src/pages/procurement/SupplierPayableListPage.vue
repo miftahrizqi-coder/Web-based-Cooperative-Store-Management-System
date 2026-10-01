@@ -638,7 +638,7 @@ onMounted(loadPayables)
                   class="block truncate"
                   :title="payable.supplierId"
                 >
-                  {{ payable.supplierId }}
+                  {{ payable.supplierName || payable.supplierId }}
                 </span>
               </td>
 
@@ -798,7 +798,7 @@ onMounted(loadPayables)
               class="mt-1 truncate text-sm font-medium text-[#17201C]"
               :title="payable.supplierId"
             >
-              {{ payable.supplierId }}
+              {{ payable.supplierName || payable.supplierId }}
             </dd>
           </div>
 

@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from uuid import uuid4
 
 import jwt
 from pwdlib import PasswordHash
@@ -6,6 +7,7 @@ from pwdlib import PasswordHash
 from app.core.config import settings
 
 
+# Argon2id (PRD §35: bcrypt/Argon2). Password tidak pernah disimpan plaintext.
 password_hash = PasswordHash.recommended()
 
 
@@ -14,16 +16,21 @@ def hash_password(password: str) -> str:
 
 
 def verify_password(password: str, hashed_password: str) -> bool:
-    return password_hash.verify(password, hashed_password)
+    try:
+        return password_hash.verify(password, hashed_password)
+    except Exception:
+        return False
 
 
-def create_access_token(subject: str) -> str:
-    expire = datetime.now(timezone.utc) + timedelta(
-        minutes=settings.jwt_access_token_expire_minutes
-    )
+def create_access_token(subject: str, token_version: int = 0) -> str:
+    now = datetime.now(timezone.utc)
+    expire = now + timedelta(minutes=settings.jwt_access_token_expire_minutes)
 
     payload = {
         "sub": subject,
+        "ver": token_version,
+        "jti": uuid4().hex,
+        "iat": now,
         "exp": expire,
     }
 

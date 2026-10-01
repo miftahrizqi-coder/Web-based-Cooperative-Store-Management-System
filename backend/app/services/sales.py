@@ -1,167 +1,151 @@
-from datetime import datetime, timezone
-from uuid import uuid4
+"""
+Penjualan / POS (PRD §23-24, §37.2, BR-02, BR-03, BR-04, BR-07).
+
+Transaksi penjualan dijalankan dalam Unit of Work:
+validasi stok -> simpan sales -> kurangi stok (atomik) -> stock movement
+-> payment -> audit log -> COMMIT (atau ROLLBACK/kompensasi jika gagal).
+"""
+
+from datetime import date
 
 from bson import ObjectId
 from fastapi import HTTPException, status
 
-from app.core.config import settings
-from app.core.database import client
-from app.models.inventory import StockMovement, StockMovementType
+from app.core.uow import unit_of_work
+from app.core.utils import (
+    PageParams,
+    local_range_bounds,
+    next_document_number,
+    parse_object_id,
+    search_regex,
+    utc_now,
+)
+from app.models.audit_log import AuditAction, AuditModule
+from app.models.inventory import StockMovementType
+from app.models.member import Member, MemberStatus
 from app.models.product import Product
-from app.models.sales import Sale, SaleItem, SaleStatus
+from app.models.returns import Return, ReturnStatus
+from app.models.sales import (
+    PaymentMethod,
+    Sale,
+    SaleItem,
+    SalePayment,
+    SalePaymentInfo,
+    SalePaymentType,
+    SaleStatus,
+)
 from app.models.user import User, UserRole
-from app.schemas.sales import SaleCreate, SaleResponse, SaleCancelResponse
+from app.schemas.sales import (
+    SaleCancelResponse,
+    SaleCreate,
+    SaleItemResponse,
+    SalePaymentResponse,
+    SaleResponse,
+)
+from app.services.audit import log_audit
+from app.services.stock import apply_stock_change
 
 
-db = client[settings.mongodb_database]
-
-products_collection = db["products"]
-stock_movements_collection = db["stock_movements"]
-
-
-def validate_product_id(product_id: str) -> ObjectId:
-    if not ObjectId.is_valid(product_id):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Product ID tidak valid: {product_id}",
-        )
-
-    return ObjectId(product_id)
+# ---------------------------------------------------------------------------
+# Response builder
+# ---------------------------------------------------------------------------
 
 
-def sale_response(sale: Sale) -> SaleResponse:
+async def _lookup(model, ids: set[str]) -> dict:
+    object_ids = [ObjectId(i) for i in ids if i and ObjectId.is_valid(i)]
+    if not object_ids:
+        return {}
+    return {str(d.id): d for d in await model.find({"_id": {"$in": object_ids}}).to_list()}
+
+
+def _sale_response(sale: Sale, viewer: User, users: dict, members: dict) -> SaleResponse:
+    can_see_cost = viewer.role in {UserRole.ADMIN, UserRole.PENGURUS}
+    member = members.get(sale.memberId or "")
+    cashier = users.get(sale.cashierId)
     return SaleResponse(
         id=str(sale.id),
-        saleNumber=sale.saleNumber,
+        invoiceNumber=sale.invoiceNumber,
+        cashierId=sale.cashierId,
+        cashierName=cashier.name if cashier else None,
         memberId=sale.memberId,
+        memberName=member.name if member else None,
+        memberNumber=member.memberNumber if member else None,
         items=[
-            {
-                "productId": item.productId,
-                "sku": item.sku,
-                "name": item.name,
-                "unit": item.unit,
-                "quantity": item.quantity,
-                "unitPrice": item.unitPrice,
-                "subtotal": item.subtotal,
-            }
+            SaleItemResponse(
+                productId=item.productId,
+                sku=item.sku,
+                name=item.name,
+                unit=item.unit,
+                quantity=item.quantity,
+                price=item.price,
+                costPrice=item.costPrice if can_see_cost else None,
+                subtotal=item.subtotal,
+                returnedQuantity=item.returnedQuantity,
+            )
             for item in sale.items
         ],
         subtotal=sale.subtotal,
+        discount=sale.discount,
         total=sale.total,
-        paymentMethod=sale.paymentMethod,
-        paidAmount=sale.paidAmount,
-        changeAmount=sale.changeAmount,
+        payment=SalePaymentResponse(**sale.payment.model_dump()),
         status=sale.status,
-        createdBy=sale.createdBy,
+        cancelledBy=sale.cancelledBy,
+        cancelledAt=sale.cancelledAt,
+        cancelReason=sale.cancelReason,
         createdAt=sale.createdAt,
         updatedAt=sale.updatedAt,
     )
 
 
-def generate_sale_number() -> str:
-    now = datetime.now(timezone.utc)
-
-    return (
-        f"SALE-{now.strftime('%Y%m%d-%H%M%S')}-"
-        f"{uuid4().hex[:6].upper()}"
-    )
+async def build_sale_responses(sales: list[Sale], viewer: User) -> list[SaleResponse]:
+    users = await _lookup(User, {s.cashierId for s in sales})
+    members = await _lookup(Member, {s.memberId for s in sales if s.memberId})
+    return [_sale_response(s, viewer, users, members) for s in sales]
 
 
-async def create_sale(
-    data: SaleCreate,
-    current_user: User,
-) -> SaleResponse:
-    if current_user.role != UserRole.KASIR:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Hanya Kasir yang dapat membuat transaksi penjualan.",
-        )
+async def get_sale_or_404(sale_id: str) -> Sale:
+    sale = await Sale.get(parse_object_id(sale_id, "ID transaksi"))
+    if sale is None:
+        raise HTTPException(status_code=404, detail="Transaksi penjualan tidak ditemukan.")
+    return sale
 
-    if not data.items:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Minimal satu produk harus dipilih.",
-        )
 
-    if data.paidAmount < 0:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Jumlah pembayaran tidak boleh negatif.",
-        )
+# ---------------------------------------------------------------------------
+# Create sale
+# ---------------------------------------------------------------------------
 
-    # Aggregate duplicate product IDs in the cart.
-    requested_quantities: dict[str, float] = {}
 
+async def create_sale(data: SaleCreate, current_user: User, ip_address: str | None = None) -> SaleResponse:
+    # Gabungkan produk duplikat di keranjang.
+    quantities: dict[str, float] = {}
     for item in data.items:
-        product_object_id = validate_product_id(item.productId)
+        product_id = str(parse_object_id(item.productId, "ID produk"))
+        quantities[product_id] = quantities.get(product_id, 0) + item.quantity
 
-        product_id = str(product_object_id)
-
-        requested_quantities[product_id] = (
-            requested_quantities.get(product_id, 0)
-            + item.quantity
-        )
-
-    product_ids = list(requested_quantities.keys())
-
-    object_ids = [
-        ObjectId(product_id)
-        for product_id in product_ids
-    ]
-
-    products = await Product.find(
-        {
-            "_id": {
-                "$in": object_ids,
-            },
-        }
-    ).to_list()
-
-    product_map = {
-        str(product.id): product
-        for product in products
+    products = {
+        str(p.id): p
+        for p in await Product.find(
+            {"_id": {"$in": [ObjectId(pid) for pid in quantities]}}
+        ).to_list()
     }
 
-    # Validate all products before starting the transaction.
-    for product_id in product_ids:
-        product = product_map.get(product_id)
-
-        if not product:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Product {product_id} tidak ditemukan.",
-            )
-
-        if not product.is_active:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=(
-                    f"Product {product.name} tidak aktif."
-                ),
-            )
-
-        requested_quantity = requested_quantities[product_id]
-
-        if product.stock < requested_quantity:
+    sale_items: list[SaleItem] = []
+    for product_id, quantity in quantities.items():
+        product = products.get(product_id)
+        if product is None:
+            raise HTTPException(status_code=404, detail=f"Produk {product_id} tidak ditemukan.")
+        if not product.isActive:
+            raise HTTPException(status_code=400, detail=f"Produk {product.name} tidak aktif.")
+        # Validasi awal (pesan ramah). Jaminan sebenarnya ada di update
+        # kondisional atomik saat pengurangan stok (BR-02).
+        if product.stock < quantity:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=(
                     f"Stok {product.name} tidak mencukupi. "
-                    f"Stok tersedia: {product.stock}, "
-                    f"diminta: {requested_quantity}."
+                    f"Tersedia {product.stock:g}, diminta {quantity:g}."
                 ),
             )
-
-    sale_items: list[SaleItem] = []
-    subtotal = 0.0
-
-    for product_id in product_ids:
-        product = product_map[product_id]
-        quantity = requested_quantities[product_id]
-
-        unit_price = float(product.selling_price)
-        item_subtotal = quantity * unit_price
-
         sale_items.append(
             SaleItem(
                 productId=product_id,
@@ -169,335 +153,279 @@ async def create_sale(
                 name=product.name,
                 unit=product.unit,
                 quantity=quantity,
-                unitPrice=unit_price,
-                subtotal=item_subtotal,
+                price=product.sellingPrice,
+                costPrice=product.purchasePrice,
+                subtotal=round(quantity * product.sellingPrice, 2),
             )
         )
 
-        subtotal += item_subtotal
+    subtotal = round(sum(i.subtotal for i in sale_items), 2)
+    if data.discount > subtotal:
+        raise HTTPException(status_code=422, detail="Diskon tidak boleh melebihi subtotal.")
+    total = round(subtotal - data.discount, 2)
 
-    total = subtotal
+    member_id = None
+    if data.memberId:
+        member = await Member.get(parse_object_id(data.memberId, "ID anggota"))
+        if member is None:
+            raise HTTPException(status_code=404, detail="Anggota tidak ditemukan.")
+        if member.status != MemberStatus.ACTIVE:
+            raise HTTPException(status_code=400, detail="Anggota tidak aktif.")
+        member_id = str(member.id)
 
-    if data.paidAmount < total:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=(
-                f"Pembayaran tidak mencukupi. "
-                f"Total: {total}, "
-                f"dibayar: {data.paidAmount}."
+    method = data.payment.method
+    if method == PaymentMethod.CASH:
+        paid = data.payment.amount if data.payment.amount is not None else 0
+        if paid < total:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Pembayaran tidak mencukupi. Total Rp{total:,.0f}, dibayar Rp{paid:,.0f}.",
+            )
+        change = round(paid - total, 2)
+    else:
+        paid = total if data.payment.amount is None else data.payment.amount
+        if abs(paid - total) > 0.005:
+            raise HTTPException(
+                status_code=400,
+                detail="Pembayaran non-tunai harus sama dengan total transaksi.",
+            )
+        change = 0.0
+
+    now = utc_now()
+    user_id = str(current_user.id)
+
+    async with unit_of_work() as uow:
+        sale = Sale(
+            invoiceNumber=await next_document_number("TRX"),
+            cashierId=user_id,
+            memberId=member_id,
+            items=sale_items,
+            subtotal=subtotal,
+            discount=data.discount,
+            total=total,
+            payment=SalePaymentInfo(
+                method=method,
+                amount=paid,
+                change=change,
+                paidAt=now,
+                referenceNumber=data.payment.referenceNumber,
             ),
+            status=SaleStatus.COMPLETED,
+            createdAt=now,
+            updatedAt=now,
         )
+        await uow.insert(sale)
 
-    change_amount = data.paidAmount - total
-
-    sale_id: str | None = None
-
-    async with client.start_session() as session:
-        async with await session.start_transaction():
-            now = datetime.now(timezone.utc)
-
-            for item in sale_items:
-                object_id = ObjectId(item.productId)
-
-                update_result = await products_collection.update_one(
-                    {
-                        "_id": object_id,
-                        "is_active": True,
-                        "stock": {
-                            "$gte": item.quantity,
-                        },
-                    },
-                    {
-                        "$inc": {
-                            "stock": -item.quantity,
-                        },
-                        "$set": {
-                            "updated_at": now,
-                        },
-                    },
-                    session=session,
-                )
-
-                if update_result.modified_count != 1:
-                    raise HTTPException(
-                        status_code=status.HTTP_409_CONFLICT,
-                        detail=(
-                            f"Stok product {item.name} berubah "
-                            "sebelum transaksi diproses. "
-                            "Silakan ulangi transaksi."
-                        ),
-                    )
-
-        # lanjutkan kode Sale dan StockMovement
-
-            # The first validation read is safe for normal flow,
-            # but stockBefore must reflect the actual value before
-            # this transaction's decrement.
-            #
-            # Reconstruct it from the originally validated product
-            # snapshot plus the requested quantity.
-            stock_before_map = {
-                product_id: product_map[product_id].stock
-                for product_id in product_ids
-            }
-
-            sale = Sale(
-                saleNumber=generate_sale_number(),
-                memberId=data.memberId,
-                items=sale_items,
-                subtotal=subtotal,
-                total=total,
-                paymentMethod=data.paymentMethod,
-                paidAmount=data.paidAmount,
-                changeAmount=change_amount,
-                status=SaleStatus.PAID,
-                createdBy=str(current_user.id),
-                createdAt=now,
-                updatedAt=now,
+        for item in sale_items:
+            await apply_stock_change(
+                uow,
+                product_id=item.productId,
+                delta=-item.quantity,
+                movement_type=StockMovementType.SALE,
+                user_id=user_id,
+                reference_type="SALE",
+                reference_id=str(sale.id),
+                reference_number=sale.invoiceNumber,
+                require_active=True,
             )
 
-            await sale.insert(
-                session=session,
+        await uow.insert(
+            SalePayment(
+                saleId=str(sale.id),
+                invoiceNumber=sale.invoiceNumber,
+                type=SalePaymentType.PAYMENT,
+                method=method,
+                amount=paid,
+                change=change,
+                referenceId=data.payment.referenceNumber,
+                paidAt=now,
+                createdBy=user_id,
             )
-
-            sale_id = str(sale.id)
-
-            for item in sale_items:
-                stock_before = stock_before_map[item.productId]
-                stock_after = (
-                    stock_before - item.quantity
-                )
-
-                movement = StockMovement(
-                    productId=item.productId,
-                    type=StockMovementType.SALE,
-                    quantity=item.quantity,
-                    stockBefore=stock_before,
-                    stockAfter=stock_after,
-                    referenceType="SALE",
-                    referenceId=str(sale.id),
-                    createdBy=str(current_user.id),
-                    createdAt=now,
-                )
-
-                await movement.insert(
-                    session=session,
-                )
-
-    if not sale_id:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Transaksi penjualan gagal dibuat.",
         )
 
-    saved_sale = await Sale.get(
-        ObjectId(sale_id)
-    )
-
-    if not saved_sale:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Transaksi berhasil diproses tetapi detail tidak ditemukan.",
+        await log_audit(
+            action=AuditAction.SALE,
+            module=AuditModule.SALE,
+            description=f"Penjualan {sale.invoiceNumber} sebesar Rp{total:,.0f} ({method.value})",
+            user=current_user,
+            reference_id=str(sale.id),
+            ip_address=ip_address,
+            session=uow.session,
         )
 
-    return sale_response(saved_sale)
+    return (await build_sale_responses([sale], current_user))[0]
+
+
+# ---------------------------------------------------------------------------
+# Query
+# ---------------------------------------------------------------------------
+
 
 async def list_sales(
     current_user: User,
+    pagination: PageParams,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    status_filter: SaleStatus | None = None,
+    cashier_id: str | None = None,
+    member_id: str | None = None,
+    search: str | None = None,
 ) -> list[SaleResponse]:
+    query: dict = {}
+
+    # Kasir hanya melihat transaksi yang dibuat sendiri (PRD §6.2).
     if current_user.role == UserRole.KASIR:
-        sales = await Sale.find(
-            {
-                "createdBy": str(current_user.id),
-            }
-        ).sort(
-            "-createdAt"
-        ).to_list()
+        query["cashierId"] = str(current_user.id)
+    elif cashier_id:
+        query["cashierId"] = cashier_id
 
-    elif current_user.role in {
-        UserRole.ADMIN,
-        UserRole.PENGURUS,
-    }:
-        sales = await Sale.find().sort(
-            "-createdAt"
-        ).to_list()
+    if member_id:
+        query["memberId"] = member_id
+    if status_filter:
+        query["status"] = status_filter.value
+    if search and search.strip():
+        query["invoiceNumber"] = search_regex(search)
 
-    else:
+    start, end = local_range_bounds(date_from, date_to)
+    if start or end:
+        query["createdAt"] = {}
+        if start:
+            query["createdAt"]["$gte"] = start
+        if end:
+            query["createdAt"]["$lt"] = end
+
+    sales = await pagination.apply(Sale.find(query).sort("-createdAt"))
+    return await build_sale_responses(sales, current_user)
+
+
+async def get_sale_detail(sale_id: str, current_user: User) -> SaleResponse:
+    sale = await get_sale_or_404(sale_id)
+    if current_user.role == UserRole.KASIR and sale.cashierId != str(current_user.id):
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Anda tidak memiliki akses ke riwayat penjualan.",
-        )
-
-    return [
-        sale_response(sale)
-        for sale in sales
-    ]
-
-
-async def get_sale_detail(
-    sale_id: str,
-    current_user: User,
-) -> SaleResponse:
-    if not ObjectId.is_valid(sale_id):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Sale ID tidak valid.",
-        )
-
-    sale = await Sale.get(
-        ObjectId(sale_id)
-    )
-
-    if not sale:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Transaksi penjualan tidak ditemukan.",
-        )
-
-    if (
-        current_user.role == UserRole.KASIR
-        and sale.createdBy != str(current_user.id)
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
+            status_code=403,
             detail="Kasir hanya dapat melihat transaksi yang dibuat sendiri.",
         )
+    return (await build_sale_responses([sale], current_user))[0]
 
-    if current_user.role not in {
-        UserRole.ADMIN,
-        UserRole.PENGURUS,
-        UserRole.KASIR,
-    }:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Anda tidak memiliki akses ke detail penjualan.",
-        )
 
-    return sale_response(sale)
+async def get_sale_by_invoice(invoice_number: str, current_user: User) -> SaleResponse:
+    sale = await Sale.find_one({"invoiceNumber": invoice_number.strip()})
+    if sale is None:
+        raise HTTPException(status_code=404, detail="Transaksi penjualan tidak ditemukan.")
+    return await get_sale_detail(str(sale.id), current_user)
+
+
+# ---------------------------------------------------------------------------
+# Cancel (BR-07)
+# ---------------------------------------------------------------------------
+
 
 async def cancel_sale(
     sale_id: str,
     current_user: User,
+    reason: str | None = None,
+    ip_address: str | None = None,
 ) -> SaleCancelResponse:
-    if current_user.role not in {
-        UserRole.ADMIN,
-        UserRole.PENGURUS,
-    }:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Anda tidak memiliki akses untuk membatalkan transaksi.",
-        )
-
-    if not ObjectId.is_valid(sale_id):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Sale ID tidak valid.",
-        )
-
-    sale = await Sale.get(
-        ObjectId(sale_id)
-    )
-
-    if not sale:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Transaksi penjualan tidak ditemukan.",
-        )
+    sale = await get_sale_or_404(sale_id)
 
     if sale.status == SaleStatus.CANCELLED:
+        raise HTTPException(status_code=409, detail="Transaksi sudah dibatalkan.")
+
+    if await Return.find_one(
+        {"saleId": str(sale.id), "status": ReturnStatus.PENDING_APPROVAL.value}
+    ):
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Transaksi sudah dibatalkan.",
+            status_code=409,
+            detail="Masih ada retur yang menunggu approval untuk transaksi ini.",
         )
 
-    now = datetime.now(timezone.utc)
+    user_id = str(current_user.id)
+    now = utc_now()
+    restored: list[dict] = []
 
-    restored_stock: list[dict] = []
+    async with unit_of_work() as uow:
+        collection = Sale.get_pymongo_collection()
+        result = await collection.update_one(
+            {"_id": sale.id, "status": SaleStatus.COMPLETED.value},
+            {
+                "$set": {
+                    "status": SaleStatus.CANCELLED.value,
+                    "cancelledBy": user_id,
+                    "cancelledAt": now,
+                    "cancelReason": reason,
+                    "updatedAt": now,
+                }
+            },
+            session=uow.session,
+        )
+        if result.modified_count != 1:
+            raise HTTPException(status_code=409, detail="Transaksi sudah dibatalkan.")
+        uow.on_rollback(
+            lambda: collection.update_one(
+                {"_id": sale.id},
+                {
+                    "$set": {"status": SaleStatus.COMPLETED.value, "updatedAt": sale.updatedAt},
+                    "$unset": {"cancelledBy": "", "cancelledAt": "", "cancelReason": ""},
+                },
+            )
+        )
 
-    async with client.start_session() as session:
-        async with await session.start_transaction():
-            for item in sale.items:
-                product = await Product.get(
-                    ObjectId(item.productId),
-                    session=session,
-                )
-
-                if not product:
-                    raise HTTPException(
-                        status_code=status.HTTP_404_NOT_FOUND,
-                        detail=(
-                            f"Product {item.productId} "
-                            "tidak ditemukan."
-                        ),
-                    )
-
-                stock_before = product.stock
-                stock_after = (
-                    stock_before + item.quantity
-                )
-
-                update_result = await products_collection.update_one(
-                    {
-                        "_id": ObjectId(item.productId),
-                    },
-                    {
-                        "$inc": {
-                            "stock": item.quantity,
-                        },
-                        "$set": {
-                            "updated_at": now,
-                        },
-                    },
-                    session=session,
-                )
-
-                if update_result.modified_count != 1:
-                    raise HTTPException(
-                        status_code=status.HTTP_409_CONFLICT,
-                        detail=(
-                            f"Gagal mengembalikan stok "
-                            f"product {item.name}."
-                        ),
-                    )
-
-                movement = StockMovement(
-                    productId=item.productId,
-                    type=StockMovementType.SALE_RETURN,
-                    quantity=item.quantity,
-                    stockBefore=stock_before,
-                    stockAfter=stock_after,
-                    referenceType="SALE",
-                    referenceId=str(sale.id),
-                    createdBy=str(current_user.id),
-                    createdAt=now,
-                )
-
-                await movement.insert(
-                    session=session,
-                )
-
-                restored_stock.append(
-                    {
-                        "productId": item.productId,
-                        "sku": item.sku,
-                        "name": item.name,
-                        "quantity": item.quantity,
-                        "stockBefore": stock_before,
-                        "stockAfter": stock_after,
-                    }
-                )
-
-            sale.status = SaleStatus.CANCELLED
-            sale.updatedAt = now
-
-            await sale.save(
-                session=session,
+        # Stock movement pembalik hanya untuk qty yang belum diretur.
+        refund_total = 0.0
+        ratio = (sale.total / sale.subtotal) if sale.subtotal else 1
+        for item in sale.items:
+            quantity = item.quantity - item.returnedQuantity
+            if quantity <= 0:
+                continue
+            movement = await apply_stock_change(
+                uow,
+                product_id=item.productId,
+                delta=quantity,
+                movement_type=StockMovementType.SALE,
+                user_id=user_id,
+                reference_type="SALE_CANCEL",
+                reference_id=str(sale.id),
+                reference_number=sale.invoiceNumber,
+                reason=reason or "Pembatalan transaksi",
+            )
+            refund_total += quantity * item.price * ratio
+            restored.append(
+                {
+                    "productId": item.productId,
+                    "sku": item.sku,
+                    "name": item.name,
+                    "quantity": quantity,
+                    "stockBefore": movement.stockBefore,
+                    "stockAfter": movement.stockAfter,
+                }
             )
 
-    return SaleCancelResponse(
-        id=str(sale.id),
-        saleNumber=sale.saleNumber,
-        status=sale.status,
-        restoredStock=restored_stock,
-        updatedAt=sale.updatedAt,
-    )
+        if refund_total > 0:
+            await uow.insert(
+                SalePayment(
+                    saleId=str(sale.id),
+                    invoiceNumber=sale.invoiceNumber,
+                    type=SalePaymentType.REFUND,
+                    method=sale.payment.method,
+                    amount=round(refund_total, 2),
+                    paidAt=now,
+                    createdBy=user_id,
+                )
+            )
+
+        await log_audit(
+            action=AuditAction.CANCEL,
+            module=AuditModule.SALE,
+            description=(
+                f"Membatalkan transaksi {sale.invoiceNumber}"
+                + (f": {reason}" if reason else "")
+            ),
+            user=current_user,
+            reference_id=str(sale.id),
+            ip_address=ip_address,
+            session=uow.session,
+        )
+
+    sale = await get_sale_or_404(sale_id)
+    response = (await build_sale_responses([sale], current_user))[0]
+    return SaleCancelResponse(**response.model_dump(), restoredStock=restored)

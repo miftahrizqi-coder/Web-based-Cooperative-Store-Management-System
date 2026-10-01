@@ -571,12 +571,12 @@ onMounted(loadPayments)
                       class="rounded-md text-sm font-medium text-[#176B4D] underline-offset-2 hover:text-[#1F805D] hover:underline focus:outline-none focus:ring-2 focus:ring-[#176B4D] focus:ring-offset-2"
                       @click="openInvoice(payment.invoiceId)"
                     >
-                      {{ payment.invoiceId }}
+                      {{ payment.invoiceNumber || payment.invoiceId }}
                     </button>
                   </td>
 
                   <td class="whitespace-nowrap px-4 py-4 text-sm text-[#46514B]">
-                    {{ payment.supplierId }}
+                    {{ payment.supplierName || payment.supplierId }}
                   </td>
 
                   <td

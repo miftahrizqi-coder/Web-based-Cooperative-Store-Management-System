@@ -148,6 +148,15 @@ onMounted(loadGoodsReceipt)
         >
           Lihat Purchase
         </button>
+
+        <button
+          v-if="goodsReceipt.items.some((item) => item.acceptedQuantity - (item.returnedQuantity ?? 0) > 0)"
+          type="button"
+          class="rounded-lg border border-[#C0392B]/40 px-4 py-2.5 text-sm font-medium text-[#C0392B] hover:bg-[#FDF0EE] focus:outline-none focus:ring-2 focus:ring-[#C0392B] focus:ring-offset-2"
+          @click="router.push({ path: '/returns/create', query: { type: 'PURCHASE', receiptId: goodsReceipt.id } })"
+        >
+          Retur ke supplier
+        </button>
       </div>
     </div>
 
@@ -294,7 +303,7 @@ onMounted(loadGoodsReceipt)
             </p>
 
             <p class="mt-1 font-medium text-gray-900">
-              {{ goodsReceipt.supplierId }}
+              {{ goodsReceipt.supplierName || goodsReceipt.supplierId }}
             </p>
           </div>
 

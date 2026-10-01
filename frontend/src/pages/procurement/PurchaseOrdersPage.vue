@@ -433,7 +433,7 @@ onMounted(loadPurchaseOrders)
 
                 <td class="px-4 py-3.5">
                   <span class="font-medium text-[#17201C]">
-                    {{ purchaseOrder.supplierId }}
+                    {{ purchaseOrder.supplierName || purchaseOrder.supplierId }}
                   </span>
                 </td>
 
@@ -531,7 +531,7 @@ onMounted(loadPurchaseOrders)
                   {{ purchaseOrder.poNumber }}
                 </button>
                 <p class="mt-1 truncate text-xs text-[#6B756F]">
-                  Supplier: {{ purchaseOrder.supplierId }}
+                  Supplier: {{ purchaseOrder.supplierName || purchaseOrder.supplierId }}
                 </p>
               </div>
 
