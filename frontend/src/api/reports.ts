@@ -1,91 +1,37 @@
-import type { SalesReport } from '../types/salesReport'
+import { api } from '../services/api'
+import type {
+  DashboardData,
+  GroupBy,
+  InventoryReport,
+  PayablesReport,
+  ProfitReport,
+  PurchasesReport,
+  SalesReport,
+  SuppliersReport,
+} from '../types/report'
 
-export interface SalesReportParams {
-  start_date?: string
-  end_date?: string
-  cashier_id?: string
-  product_id?: string
-  category_id?: string
-  member_id?: string
+export interface PeriodParams {
+  dateFrom?: string
+  dateTo?: string
+  groupBy?: GroupBy
 }
 
-async function getErrorMessage(
-  response: Response,
-  fallback: string,
-): Promise<string> {
-  try {
-    const data = await response.json()
+export const getDashboard = () => api.get<DashboardData>('/api/reports/dashboard')
 
-    if (typeof data?.detail === 'string') {
-      return data.detail
-    }
+export const getSalesReport = (
+  params: PeriodParams & { cashierId?: string; productId?: string; categoryId?: string; memberId?: string },
+) => api.get<SalesReport>('/api/reports/sales', { ...params })
 
-    if (Array.isArray(data?.detail)) {
-      const message = data.detail
-        .map((item: { msg?: string }) => item.msg)
-        .filter(Boolean)
-        .join(', ')
+export const getPurchasesReport = (params: PeriodParams & { supplierId?: string }) =>
+  api.get<PurchasesReport>('/api/reports/purchases', { ...params })
 
-      if (message) {
-        return message
-      }
-    }
-  } catch {
-    // Ignore invalid response body.
-  }
+export const getInventoryReport = (params: PeriodParams & { categoryId?: string }) =>
+  api.get<InventoryReport>('/api/reports/inventory', { ...params })
 
-  return fallback
-}
+export const getSuppliersReport = () => api.get<SuppliersReport>('/api/reports/suppliers')
 
-export async function getSalesReport(
-  accessToken: string,
-  params: SalesReportParams = {},
-): Promise<SalesReport> {
-  const query = new URLSearchParams()
+export const getPayablesReport = (params: { supplierId?: string; outstandingOnly?: boolean } = {}) =>
+  api.get<PayablesReport>('/api/reports/payables', { ...params })
 
-  if (params.start_date) {
-    query.set('start_date', params.start_date)
-  }
-
-  if (params.end_date) {
-    query.set('end_date', params.end_date)
-  }
-
-  if (params.cashier_id) {
-    query.set('cashier_id', params.cashier_id)
-  }
-
-  if (params.product_id) {
-    query.set('product_id', params.product_id)
-  }
-
-  if (params.category_id) {
-    query.set('category_id', params.category_id)
-  }
-
-  if (params.member_id) {
-    query.set('member_id', params.member_id)
-  }
-
-  const queryString = query.toString()
-
-  const response = await fetch(
-    `/api/reports/sales${queryString ? `?${queryString}` : ''}`,
-    {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-    },
-  )
-
-  if (!response.ok) {
-    throw new Error(
-      await getErrorMessage(
-        response,
-        'Laporan penjualan gagal dimuat.',
-      ),
-    )
-  }
-
-  return response.json() as Promise<SalesReport>
-}
+export const getProfitReport = (params: PeriodParams) =>
+  api.get<ProfitReport>('/api/reports/profit', { ...params })

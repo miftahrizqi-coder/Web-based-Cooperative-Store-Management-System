@@ -19,6 +19,9 @@ class ActivityType(str, Enum):
     SUBMITTED = "SUBMITTED"
     APPROVED = "APPROVED"
     ORDERED = "ORDERED"
+    RECEIVED = "RECEIVED"
+    COMPLETED = "COMPLETED"
+    PAID = "PAID"
     CANCELLED = "CANCELLED"
 
 

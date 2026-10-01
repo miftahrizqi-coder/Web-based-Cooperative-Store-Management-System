@@ -1,591 +1,291 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { computed, onMounted, reactive, ref } from 'vue'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
+import { createGoodsReceipt, getPurchaseOrder, getPurchaseOrders } from '../../api/procurement'
+import { errorMessage } from '../../services/api'
 import { useAuth } from '../../stores/auth'
-import { createGoodsReceipt, getPurchaseOrder } from '../../api/procurement'
+import type { PurchaseOrder } from '../../types/procurement'
+import { formatCurrency, formatDate, formatNumber } from '../../utils/format'
+
+/**
+ * Penerimaan barang (PRD §15, BR-05, BR-06):
+ * - bisa diterima sebagian; sisa tetap terbuka (PARTIALLY_RECEIVED),
+ * - hanya jumlah "diterima baik" (accepted) yang menambah stok,
+ * - barang ditolak wajib diberi alasan.
+ */
+interface Line {
+  productId: string
+  sku: string
+  name: string
+  ordered: number
+  received: number
+  remaining: number
+  unitPrice: number
+  receivedQuantity: number
+  acceptedQuantity: number
+  rejectionReason: string
+}
 
 const route = useRoute()
 const router = useRouter()
 const { token } = useAuth()
 
-const purchaseOrderId = route.params.id as string
-
-interface PurchaseOrderItem {
-  supplierProductId: string
-  productId: string
-  sku: string
-  name: string
-  quantity: number
-  unitPrice: number
-}
-
-interface PurchaseOrder {
-  id: string
-  poNumber: string
-  supplierId: string
-  status: string
-  items: PurchaseOrderItem[]
-}
-
-interface ReceiptItemForm {
-  productId: string
-  name: string
-  orderedQuantity: number
-  previouslyReceivedQuantity: number
-  remainingQuantity: number
-  receivedQuantity: number
-  acceptedQuantity: number
-  rejectedQuantity: number
-  rejectionReason: string
-}
-
-const purchaseOrder = ref<PurchaseOrder | null>(null)
-const items = ref<ReceiptItemForm[]>([])
+const openOrders = ref<PurchaseOrder[]>([])
+const selectedPoId = ref(typeof route.params.id === 'string' ? route.params.id : '')
+const po = ref<PurchaseOrder | null>(null)
+const lines = reactive<Line[]>([])
 const notes = ref('')
-
 const isLoading = ref(true)
-const isSaving = ref(false)
-const errorMessage = ref('')
-const fieldError = ref('')
+const saving = ref(false)
+const formError = ref('')
 
-const canSubmit = computed(() => {
-  if (!purchaseOrder.value || items.value.length === 0) {
-    return false
-  }
+const receivableStatuses = ['ORDERED', 'PARTIALLY_RECEIVED']
+const canReceive = computed(() => Boolean(po.value && receivableStatuses.includes(po.value.status)))
+const activeLines = computed(() => lines.filter((line) => line.receivedQuantity > 0))
+const totals = computed(() => ({
+  received: activeLines.value.reduce((sum, l) => sum + l.receivedQuantity, 0),
+  accepted: activeLines.value.reduce((sum, l) => sum + l.acceptedQuantity, 0),
+}))
 
-  return items.value.every((item) => {
-    if (item.receivedQuantity <= 0) {
-      return false
-    }
-
-    if (item.acceptedQuantity < 0 || item.rejectedQuantity < 0) {
-      return false
-    }
-
-    if (
-      item.acceptedQuantity + item.rejectedQuantity !==
-      item.receivedQuantity
-    ) {
-      return false
-    }
-
-    if (
-      item.receivedQuantity >
-      item.remainingQuantity
-    ) {
-      return false
-    }
-
-    if (
-      item.rejectedQuantity > 0 &&
-      !item.rejectionReason.trim()
-    ) {
-      return false
-    }
-
-    return true
-  })
-})
-
-function formatCurrency(value: number) {
-  return new Intl.NumberFormat('id-ID', {
-    style: 'currency',
-    currency: 'IDR',
-    maximumFractionDigits: 0,
-  }).format(Number(value) || 0)
+function rejected(line: Line): number {
+  return Math.max((line.receivedQuantity || 0) - (line.acceptedQuantity || 0), 0)
 }
 
-function goBack() {
-  router.push(`/purchases/${purchaseOrderId}`)
+function lineError(line: Line): string {
+  if (!line.receivedQuantity) return ''
+  if (!Number.isInteger(line.receivedQuantity) || line.receivedQuantity < 0) return 'Jumlah harus bilangan bulat ≥ 0.'
+  if (line.receivedQuantity > line.remaining) return `Melebihi sisa PO (${line.remaining}).`
+  if (line.acceptedQuantity > line.receivedQuantity || line.acceptedQuantity < 0) return 'Diterima baik tidak boleh melebihi jumlah datang.'
+  if (rejected(line) > 0 && !line.rejectionReason.trim()) return 'Alasan penolakan wajib diisi.'
+  return ''
 }
 
-function createFormItems(order: PurchaseOrder) {
-  items.value = order.items.map((item) => ({
-    productId: item.productId,
-    name: item.name,
-    orderedQuantity: item.quantity,
-    previouslyReceivedQuantity: 0,
-    remainingQuantity: item.quantity,
-    receivedQuantity: 0,
-    acceptedQuantity: 0,
-    rejectedQuantity: 0,
-    rejectionReason: '',
-  }))
+function setReceived(line: Line, value: number) {
+  line.receivedQuantity = value
+  line.acceptedQuantity = value
 }
 
-async function loadPurchaseOrder() {
-  if (!token.value) {
-    errorMessage.value =
-      'Sesi login tidak ditemukan. Silakan login kembali.'
-    isLoading.value = false
-    return
-  }
+function receiveAllRemaining() {
+  for (const line of lines) setReceived(line, line.remaining)
+}
 
-  if (!purchaseOrderId) {
-    errorMessage.value =
-      'Purchase Order tidak ditemukan.'
-    isLoading.value = false
-    return
-  }
-
+async function loadPo(id: string) {
+  formError.value = ''
+  lines.splice(0)
+  po.value = null
+  if (!id) return
   try {
-    const result = await getPurchaseOrder(
-      token.value,
-      purchaseOrderId,
-    )
-
-    purchaseOrder.value = result as PurchaseOrder
-
-    createFormItems(purchaseOrder.value)
-  } catch (error) {
-    errorMessage.value =
-      error instanceof Error
-        ? error.message
-        : 'Gagal mengambil data Purchase Order.'
-  } finally {
-    isLoading.value = false
-  }
-}
-
-function updateReceivedQuantity(item: ReceiptItemForm) {
-  if (item.receivedQuantity < 0) {
-    item.receivedQuantity = 0
-  }
-
-  if (
-    item.receivedQuantity >
-    item.remainingQuantity
-  ) {
-    item.receivedQuantity =
-      item.remainingQuantity
-  }
-
-  if (
-    item.acceptedQuantity >
-    item.receivedQuantity
-  ) {
-    item.acceptedQuantity =
-      item.receivedQuantity
-  }
-
-  item.rejectedQuantity =
-    Math.max(
-      item.receivedQuantity -
-        item.acceptedQuantity,
-      0,
-    )
-}
-
-function updateAcceptedQuantity(item: ReceiptItemForm) {
-  if (item.acceptedQuantity < 0) {
-    item.acceptedQuantity = 0
-  }
-
-  if (
-    item.acceptedQuantity >
-    item.receivedQuantity
-  ) {
-    item.acceptedQuantity =
-      item.receivedQuantity
-  }
-
-  item.rejectedQuantity =
-    item.receivedQuantity -
-    item.acceptedQuantity
-}
-
-function updateRejectedQuantity(item: ReceiptItemForm) {
-  if (item.rejectedQuantity < 0) {
-    item.rejectedQuantity = 0
-  }
-
-  if (
-    item.rejectedQuantity >
-    item.receivedQuantity
-  ) {
-    item.rejectedQuantity =
-      item.receivedQuantity
-  }
-
-  item.acceptedQuantity =
-    item.receivedQuantity -
-    item.rejectedQuantity
-}
-
-function validate() {
-  fieldError.value = ''
-
-  if (!purchaseOrder.value) {
-    fieldError.value =
-      'Purchase Order tidak ditemukan.'
-    return false
-  }
-
-  if (items.value.length === 0) {
-    fieldError.value =
-      'Tidak ada item yang dapat diterima.'
-    return false
-  }
-
-  for (const item of items.value) {
-    if (!item.productId) {
-      fieldError.value =
-        `Product ID untuk ${item.name} tidak ditemukan.`
-      return false
-    }
-
-    if (item.receivedQuantity <= 0) {
-      fieldError.value =
-        `Jumlah diterima untuk ${item.name} harus lebih dari 0.`
-      return false
-    }
-
-    if (
-      item.receivedQuantity >
-      item.remainingQuantity
-    ) {
-      fieldError.value =
-        `Jumlah diterima untuk ${item.name} melebihi sisa PO.`
-      return false
-    }
-
-    if (
-      item.acceptedQuantity +
-        item.rejectedQuantity !==
-      item.receivedQuantity
-    ) {
-      fieldError.value =
-        `Jumlah diterima, diterima baik, dan ditolak untuk ${item.name} tidak sesuai.`
-      return false
-    }
-
-    if (
-      item.rejectedQuantity > 0 &&
-      !item.rejectionReason.trim()
-    ) {
-      fieldError.value =
-        `Alasan penolakan untuk ${item.name} wajib diisi.`
-      return false
-    }
-  }
-
-  return true
-}
-
-async function handleSubmit() {
-  errorMessage.value = ''
-
-  if (!validate()) {
-    return
-  }
-
-  if (!token.value) {
-    errorMessage.value =
-      'Sesi login tidak ditemukan. Silakan login kembali.'
-    return
-  }
-
-  isSaving.value = true
-
-  try {
-    const payload = {
-      purchaseOrderId,
-      items: items.value.map((item) => ({
+    po.value = await getPurchaseOrder(token.value ?? '', id)
+    for (const item of po.value.items) {
+      const received = item.receivedQuantity ?? 0
+      const remaining = item.remainingQuantity ?? Math.max(item.quantity - received, 0)
+      if (remaining <= 0) continue
+      lines.push({
         productId: item.productId,
+        sku: item.sku,
         name: item.name,
-        receivedQuantity: item.receivedQuantity,
-        acceptedQuantity: item.acceptedQuantity,
-        rejectedQuantity: item.rejectedQuantity,
-        rejectionReason:
-          item.rejectedQuantity > 0
-            ? item.rejectionReason.trim()
-            : null,
-      })),
-      notes: notes.value.trim() || null,
+        ordered: item.quantity,
+        received,
+        remaining,
+        unitPrice: item.unitPrice,
+        receivedQuantity: 0,
+        acceptedQuantity: 0,
+        rejectionReason: '',
+      })
     }
-
-    const receipt = await createGoodsReceipt(
-      token.value,
-      payload,
-    )
-
-    await router.push(
-      `/goods-receipts/${receipt.id}`,
-    )
   } catch (error) {
-    errorMessage.value =
-      error instanceof Error
-        ? error.message
-        : 'Penerimaan gagal disimpan. Tidak ada perubahan pada stok. Coba lagi.'
-  } finally {
-    isSaving.value = false
+    formError.value = errorMessage(error, 'Gagal memuat Purchase Order.')
   }
 }
 
-onMounted(loadPurchaseOrder)
+async function selectPo() {
+  await router.replace(selectedPoId.value ? `/goods-receipts/create/${selectedPoId.value}` : '/goods-receipts/create')
+  await loadPo(selectedPoId.value)
+}
+
+async function submit() {
+  formError.value = ''
+  if (!po.value) return
+  if (activeLines.value.length === 0) {
+    formError.value = 'Isi jumlah barang datang minimal untuk satu produk.'
+    return
+  }
+  const invalid = activeLines.value.find((line) => lineError(line))
+  if (invalid) {
+    formError.value = `${invalid.name}: ${lineError(invalid)}`
+    return
+  }
+  saving.value = true
+  try {
+    const receipt = await createGoodsReceipt(token.value ?? '', {
+      purchaseOrderId: po.value.id,
+      notes: notes.value.trim() || null,
+      items: activeLines.value.map((line) => ({
+        productId: line.productId,
+        name: line.name,
+        receivedQuantity: line.receivedQuantity,
+        acceptedQuantity: line.acceptedQuantity,
+        rejectedQuantity: rejected(line),
+        rejectionReason: rejected(line) > 0 ? line.rejectionReason.trim() : null,
+      })),
+    })
+    await router.push(`/goods-receipts/${receipt.id}`)
+  } catch (error) {
+    formError.value = errorMessage(error, 'Gagal menyimpan penerimaan barang.')
+  } finally {
+    saving.value = false
+  }
+}
+
+onMounted(async () => {
+  try {
+    const orders = await getPurchaseOrders(token.value ?? '')
+    openOrders.value = orders.filter((order) => receivableStatuses.includes(order.status))
+  } catch (error) {
+    formError.value = errorMessage(error, 'Gagal memuat daftar PO.')
+  }
+  await loadPo(selectedPoId.value)
+  isLoading.value = false
+})
 </script>
 
 <template>
-  <div class="space-y-6">
-    <div>
-      <button
-        type="button"
-        class="text-sm font-medium text-[#176B4D] hover:underline"
-        @click="goBack"
-      >
-        ← Kembali ke Purchase Order
-      </button>
-
-      <h1 class="mt-3 text-2xl font-bold text-[#12372A]">
-        Penerimaan Barang
-      </h1>
-
-      <p class="mt-1 text-sm text-slate-600">
-        Catat barang yang diterima dari supplier berdasarkan Purchase Order.
-      </p>
-    </div>
-
-    <div
-      v-if="isLoading"
-      class="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-600"
-    >
-      Memuat Purchase Order...
-    </div>
-
-    <div
-      v-else-if="errorMessage && !purchaseOrder"
-      class="rounded-xl border border-[#E7B8B2] bg-[#FEF3F2] p-4 text-sm text-[#C0392B]"
-    >
-      {{ errorMessage }}
-    </div>
-
-    <form
-      v-else-if="purchaseOrder"
-      class="space-y-6"
-      @submit.prevent="handleSubmit"
-    >
-      <section
-        class="rounded-xl border border-slate-200 bg-white p-5"
-      >
-        <div class="grid gap-4 sm:grid-cols-2">
-          <div>
-            <p class="text-xs font-medium uppercase text-slate-500">
-              Purchase Order
-            </p>
-            <p class="mt-1 font-semibold text-[#12372A]">
-              {{ purchaseOrder.poNumber }}
-            </p>
-          </div>
-
-          <div>
-            <p class="text-xs font-medium uppercase text-slate-500">
-              Status
-            </p>
-            <p class="mt-1 font-semibold text-[#12372A]">
-              {{ purchaseOrder.status }}
-            </p>
-          </div>
-        </div>
-      </section>
-
-      <div
-        v-if="fieldError"
-        class="rounded-xl border border-[#E7B8B2] bg-[#FEF3F2] p-4 text-sm text-[#C0392B]"
-      >
-        {{ fieldError }}
-      </div>
-
-      <div
-        v-if="errorMessage"
-        class="rounded-xl border border-[#E7B8B2] bg-[#FEF3F2] p-4 text-sm text-[#C0392B]"
-      >
-        {{ errorMessage }}
-      </div>
-
-      <section
-        class="overflow-hidden rounded-xl border border-slate-200 bg-white"
-      >
-        <div class="border-b border-slate-200 p-5">
-          <h2 class="font-semibold text-[#12372A]">
-            Item penerimaan
-          </h2>
-          <p class="mt-1 text-sm text-slate-500">
-            Jumlah diterima tidak boleh melebihi sisa Purchase Order.
+  <main class="page">
+    <div class="page-inner">
+      <header class="page-header">
+        <div>
+          <nav class="breadcrumb" aria-label="Breadcrumb">
+            <RouterLink to="/goods-receipts">Penerimaan Barang</RouterLink><span>/</span><span aria-current="page">Terima barang</span>
+          </nav>
+          <h1 class="page-title">Terima barang</h1>
+          <p class="page-subtitle">
+            Catat barang yang datang dari supplier. Hanya jumlah yang diterima baik yang menambah stok; penerimaan boleh sebagian.
           </p>
         </div>
+      </header>
 
-        <div class="divide-y divide-slate-200">
-          <div
-            v-for="item in items"
-            :key="item.productId"
-            class="space-y-5 p-5"
-          >
-            <div>
-              <p class="font-semibold text-[#12372A]">
-                {{ item.name }}
-              </p>
+      <div v-if="formError" class="alert alert-error" role="alert">{{ formError }}</div>
 
-              <p class="mt-1 text-xs text-slate-500">
-                Product ID: {{ item.productId }}
-              </p>
-            </div>
-
-            <div class="grid gap-4 sm:grid-cols-3">
-              <div>
-                <label class="text-xs font-medium text-slate-500">
-                  Jumlah PO
-                </label>
-                <p class="mt-1 font-semibold">
-                  {{ item.orderedQuantity }}
-                </p>
-              </div>
-
-              <div>
-                <label class="text-xs font-medium text-slate-500">
-                  Sudah diterima
-                </label>
-                <p class="mt-1 font-semibold">
-                  {{ item.previouslyReceivedQuantity }}
-                </p>
-              </div>
-
-              <div>
-                <label class="text-xs font-medium text-slate-500">
-                  Sisa
-                </label>
-                <p class="mt-1 font-semibold text-[#176B4D]">
-                  {{ item.remainingQuantity }}
-                </p>
-              </div>
-            </div>
-
-            <div class="grid gap-4 sm:grid-cols-3">
-              <div>
-                <label
-                  class="block text-sm font-medium text-slate-700"
-                >
-                  Jumlah diterima
-                </label>
-
-                <input
-                  v-model.number="item.receivedQuantity"
-                  type="number"
-                  min="1"
-                  :max="item.remainingQuantity"
-                  class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-[#176B4D] focus:ring-2 focus:ring-[#176B4D]/20"
-                  @input="updateReceivedQuantity(item)"
-                />
-              </div>
-
-              <div>
-                <label
-                  class="block text-sm font-medium text-slate-700"
-                >
-                  Diterima baik
-                </label>
-
-                <input
-                  v-model.number="item.acceptedQuantity"
-                  type="number"
-                  min="0"
-                  :max="item.receivedQuantity"
-                  class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-[#176B4D] focus:ring-2 focus:ring-[#176B4D]/20"
-                  @input="updateAcceptedQuantity(item)"
-                />
-              </div>
-
-              <div>
-                <label
-                  class="block text-sm font-medium text-slate-700"
-                >
-                  Ditolak
-                </label>
-
-                <input
-                  v-model.number="item.rejectedQuantity"
-                  type="number"
-                  min="0"
-                  :max="item.receivedQuantity"
-                  class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-[#176B4D] focus:ring-2 focus:ring-[#176B4D]/20"
-                  @input="updateRejectedQuantity(item)"
-                />
-              </div>
-            </div>
-
-            <div
-              v-if="item.rejectedQuantity > 0"
-            >
-              <label
-                class="block text-sm font-medium text-slate-700"
-              >
-                Alasan penolakan
-              </label>
-
-              <textarea
-                v-model="item.rejectionReason"
-                rows="2"
-                class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-[#176B4D] focus:ring-2 focus:ring-[#176B4D]/20"
-                placeholder="Contoh: barang rusak atau jumlah tidak sesuai."
-              />
-            </div>
-
-            <div
-              class="rounded-lg bg-slate-50 px-4 py-3 text-sm text-slate-600"
-            >
-              Total diterima:
-              <strong class="text-slate-900">
-                {{ item.receivedQuantity }}
-              </strong>
-              · Baik:
-              <strong class="text-[#176B4D]">
-                {{ item.acceptedQuantity }}
-              </strong>
-              · Ditolak:
-              <strong class="text-[#C0392B]">
-                {{ item.rejectedQuantity }}
-              </strong>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section
-        class="rounded-xl border border-slate-200 bg-white p-5"
-      >
-        <label
-          class="block text-sm font-medium text-slate-700"
-        >
-          Catatan
+      <section class="card card-body">
+        <label class="field">
+          <span class="label">Purchase Order <span class="req">*</span></span>
+          <select v-model="selectedPoId" class="select" :disabled="isLoading" @change="selectPo">
+            <option value="">Pilih PO berstatus Dipesan / Sebagian diterima</option>
+            <option v-for="order in openOrders" :key="order.id" :value="order.id">
+              {{ order.poNumber }} · {{ order.supplierName || order.supplierId }} · {{ order.status === 'ORDERED' ? 'Dipesan' : 'Sebagian diterima' }}
+            </option>
+          </select>
+          <span v-if="!isLoading && openOrders.length === 0" class="hint">
+            Tidak ada PO yang menunggu penerimaan. PO harus disetujui lalu ditandai "sudah dipesan".
+          </span>
         </label>
-
-        <textarea
-          v-model="notes"
-          rows="3"
-          class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-[#176B4D] focus:ring-2 focus:ring-[#176B4D]/20"
-          placeholder="Catatan penerimaan barang (opsional)"
-        />
       </section>
 
-      <div
-        class="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end"
-      >
-        <button
-          type="button"
-          class="rounded-lg border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-          :disabled="isSaving"
-          @click="goBack"
-        >
-          Batal
-        </button>
+      <template v-if="po">
+        <div v-if="!canReceive" class="alert alert-warning">
+          PO {{ po.poNumber }} berstatus {{ po.status }} dan tidak dapat menerima barang.
+        </div>
 
-        <button
-          type="submit"
-          class="rounded-lg bg-[#176B4D] px-5 py-3 text-sm font-semibold text-white hover:bg-[#12372A] disabled:cursor-not-allowed disabled:opacity-50"
-          :disabled="isSaving || !canSubmit"
-        >
-          {{ isSaving ? 'Menyimpan...' : 'Simpan Penerimaan' }}
-        </button>
-      </div>
-    </form>
-  </div>
+        <section class="card">
+          <div class="card-header">
+            <div>
+              <h2 class="card-title">{{ po.poNumber }} · {{ po.supplierName || po.supplierId }}</h2>
+              <p class="card-subtitle">
+                Estimasi kirim {{ formatDate(po.expectedDeliveryDate) }} · Nilai PO {{ formatCurrency(po.grandTotal) }}
+              </p>
+            </div>
+            <button v-if="canReceive && lines.length" type="button" class="btn btn-secondary btn-sm" @click="receiveAllRemaining">
+              Isi semua sisa
+            </button>
+          </div>
+
+          <div v-if="lines.length === 0" class="empty">Semua item PO sudah diterima.</div>
+          <div v-else class="table-wrap">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Produk</th>
+                  <th class="num">Dipesan</th>
+                  <th class="num">Sudah diterima</th>
+                  <th class="num">Sisa</th>
+                  <th class="num" style="width: 120px">Datang</th>
+                  <th class="num" style="width: 120px">Diterima baik</th>
+                  <th class="num">Ditolak</th>
+                  <th style="min-width: 200px">Alasan penolakan</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="line in lines" :key="line.productId">
+                  <td>{{ line.name }}<div class="mono muted">{{ line.sku }}</div></td>
+                  <td class="num">{{ formatNumber(line.ordered) }}</td>
+                  <td class="num">{{ formatNumber(line.received) }}</td>
+                  <td class="num strong">{{ formatNumber(line.remaining) }}</td>
+                  <td>
+                    <input
+                      :value="line.receivedQuantity"
+                      type="number"
+                      min="0"
+                      :max="line.remaining"
+                      step="1"
+                      class="input num"
+                      :disabled="!canReceive"
+                      :aria-label="`Jumlah datang ${line.name}`"
+                      @input="setReceived(line, Number(($event.target as HTMLInputElement).value) || 0)"
+                    >
+                  </td>
+                  <td>
+                    <input
+                      v-model.number="line.acceptedQuantity"
+                      type="number"
+                      min="0"
+                      :max="line.receivedQuantity"
+                      step="1"
+                      class="input num"
+                      :disabled="!canReceive || !line.receivedQuantity"
+                      :aria-label="`Diterima baik ${line.name}`"
+                    >
+                  </td>
+                  <td class="num" :class="{ 'text-danger strong': rejected(line) > 0 }">{{ formatNumber(rejected(line)) }}</td>
+                  <td>
+                    <input
+                      v-if="rejected(line) > 0"
+                      v-model="line.rejectionReason"
+                      class="input"
+                      maxlength="500"
+                      placeholder="Mis. kemasan rusak"
+                      :aria-label="`Alasan penolakan ${line.name}`"
+                    >
+                    <span v-else class="muted small">—</span>
+                    <div v-if="lineError(line)" class="small text-danger" style="margin-top: 4px">{{ lineError(line) }}</div>
+                  </td>
+                </tr>
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td colspan="4">Total penerimaan ini</td>
+                  <td class="num">{{ formatNumber(totals.received) }}</td>
+                  <td class="num">{{ formatNumber(totals.accepted) }}</td>
+                  <td class="num">{{ formatNumber(totals.received - totals.accepted) }}</td>
+                  <td />
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+
+          <div v-if="lines.length" class="card-body">
+            <label class="field">
+              <span class="label">Catatan penerimaan</span>
+              <textarea v-model="notes" class="textarea" maxlength="1000" placeholder="Mis. 2 dus penyok, sisa dikirim minggu depan" />
+            </label>
+          </div>
+          <div v-if="lines.length" class="modal-footer">
+            <RouterLink :to="`/purchase-orders/${po.id}`" class="btn btn-secondary">Kembali ke PO</RouterLink>
+            <button type="button" class="btn btn-primary" :disabled="saving || !canReceive" @click="submit">
+              {{ saving ? 'Menyimpan…' : 'Simpan penerimaan' }}
+            </button>
+          </div>
+        </section>
+      </template>
+    </div>
+  </main>
 </template>

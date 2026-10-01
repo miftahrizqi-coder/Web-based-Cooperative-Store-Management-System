@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from enum import Enum
 
 from beanie import Document
@@ -19,10 +20,29 @@ class User(Document):
     role: UserRole
     is_active: bool = True
 
+    # Akun role "anggota" ditautkan ke dokumen members agar anggota bisa
+    # melihat profil & riwayat transaksinya sendiri (PRD §6.4).
+    memberId: str | None = None
+
+    # Dinaikkan saat password diubah/di-reset -> token lama tidak berlaku.
+    tokenVersion: int = 0
+
+    lastLoginAt: datetime | None = None
+    createdAt: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updatedAt: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
     class Settings:
         name = "users"
-        indexes = [
-            "username",
-            "email",
-            "role",
-        ]
+        # username & email: index unik dibuat di core/database.py
+        indexes = ["role", "memberId"]
+
+
+class RevokedToken(Document):
+    """Token yang di-logout sebelum kedaluwarsa (denylist berbasis jti)."""
+
+    jti: str
+    expiresAt: datetime
+
+    class Settings:
+        name = "revoked_tokens"
+        indexes = ["jti"]

@@ -5,8 +5,10 @@ import { useRoute, useRouter } from 'vue-router'
 import {
   approvePurchaseOrder,
   cancelPurchaseOrder,
+  completePurchaseOrder,
   getPurchaseOrder,
   orderPurchaseOrder,
+  rejectPurchaseOrder,
   submitPurchaseOrder,
 } from '../../api/procurement'
 
@@ -124,10 +126,25 @@ const canOrder = computed(
       currentUser.value?.role === 'pengurus'),
 )
 
+const canReject = computed(
+  () =>
+    purchaseOrder.value?.status === 'PENDING_APPROVAL' &&
+    (currentUser.value?.role === 'admin' ||
+      currentUser.value?.role === 'pengurus'),
+)
+
+const canComplete = computed(
+  () =>
+    (purchaseOrder.value?.status === 'RECEIVED' ||
+      purchaseOrder.value?.status === 'PARTIALLY_RECEIVED') &&
+    (currentUser.value?.role === 'admin' ||
+      currentUser.value?.role === 'pengurus'),
+)
+
 const canCancel = computed(
   () =>
     Boolean(purchaseOrder.value) &&
-    ['DRAFT', 'PENDING_APPROVAL', 'APPROVED'].includes(
+    ['DRAFT', 'PENDING_APPROVAL', 'APPROVED', 'ORDERED'].includes(
       purchaseOrder.value!.status,
     ) &&
     (currentUser.value?.role === 'admin' ||
@@ -164,8 +181,10 @@ async function runAction(
   action:
     | 'submit'
     | 'approve'
+    | 'reject'
     | 'order'
-    | 'cancel',
+    | 'cancel'
+    | 'complete',
 ) {
   if (!token.value || !purchaseOrder.value) {
     actionError.value =
@@ -176,6 +195,11 @@ async function runAction(
   const messages = {
     submit: 'Kirim purchase order ini untuk persetujuan?',
     approve: 'Setujui purchase order ini?',
+    reject: 'Tolak approval dan kembalikan PO ke status Draft?',
+    complete:
+      purchaseOrder.value.status === 'PARTIALLY_RECEIVED'
+        ? 'PO baru diterima sebagian. Tutup PO (sisa barang tidak akan diterima)?'
+        : 'Tandai purchase order sebagai selesai?',
     order: 'Tandai purchase order sebagai sudah dipesan?',
     cancel: 'Batalkan purchase order ini?',
   }
@@ -200,6 +224,14 @@ async function runAction(
         token.value,
         purchaseOrder.value.id,
       )
+    }
+
+    if (action === 'reject') {
+      await rejectPurchaseOrder(token.value, purchaseOrder.value.id)
+    }
+
+    if (action === 'complete') {
+      await completePurchaseOrder(token.value, purchaseOrder.value.id)
     }
 
     if (action === 'order') {
@@ -430,7 +462,7 @@ onMounted(loadPurchaseOrder)
               <div>
                 <dt class="text-xs font-medium uppercase tracking-wide text-[#6B756F]">Supplier</dt>
                 <dd class="mt-1 break-all text-sm font-semibold text-[#17201C]">
-                  {{ purchaseOrder.supplierId }}
+                  {{ purchaseOrder.supplierName || purchaseOrder.supplierId }}
                 </dd>
               </div>
               <div>
@@ -496,6 +528,8 @@ onMounted(loadPurchaseOrder)
                   <th class="px-5 py-3 text-left font-semibold text-[#46514B]">Produk</th>
                   <th class="px-5 py-3 text-left font-semibold text-[#46514B]">SKU</th>
                   <th class="px-5 py-3 text-right font-semibold text-[#46514B]">Qty</th>
+                  <th class="px-5 py-3 text-right font-semibold text-[#46514B]">Diterima</th>
+                  <th class="px-5 py-3 text-right font-semibold text-[#46514B]">Sisa</th>
                   <th class="px-5 py-3 text-right font-semibold text-[#46514B]">Harga</th>
                   <th class="px-5 py-3 text-right font-semibold text-[#46514B]">Subtotal</th>
                 </tr>
@@ -512,6 +546,13 @@ onMounted(loadPurchaseOrder)
                   </td>
                   <td class="px-5 py-4 font-mono text-xs text-[#46514B]">{{ item.sku }}</td>
                   <td class="px-5 py-4 text-right tabular-nums font-medium text-[#17201C]">{{ item.quantity }}</td>
+                  <td class="px-5 py-4 text-right tabular-nums text-[#46514B]">
+                    {{ item.receivedQuantity ?? 0 }}
+                    <span v-if="(item.receivedQuantity ?? 0) !== (item.acceptedQuantity ?? 0)" class="block text-xs text-[#6B756F]">
+                      baik {{ item.acceptedQuantity ?? 0 }}
+                    </span>
+                  </td>
+                  <td class="px-5 py-4 text-right tabular-nums text-[#46514B]">{{ item.remainingQuantity ?? item.quantity }}</td>
                   <td class="px-5 py-4 text-right tabular-nums text-[#46514B]">{{ formatCurrency(item.unitPrice) }}</td>
                   <td class="px-5 py-4 text-right tabular-nums font-semibold text-[#17201C]">{{ formatCurrency(item.subtotal) }}</td>
                 </tr>
@@ -654,6 +695,16 @@ onMounted(loadPurchaseOrder)
               </button>
 
               <button
+                v-if="canReject"
+                type="button"
+                :disabled="isActionLoading"
+                class="rounded-lg border border-[#D6DDD9] bg-white px-4 py-2.5 text-sm font-semibold text-[#46514B] hover:bg-[#F1F4F2] disabled:cursor-not-allowed disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-[#176B4D] focus:ring-offset-2"
+                @click="runAction('reject')"
+              >
+                Tolak (kembali ke Draft)
+              </button>
+
+              <button
                 v-if="canOrder"
                 type="button"
                 :disabled="isActionLoading"
@@ -670,6 +721,16 @@ onMounted(loadPurchaseOrder)
                 @click="router.push(`/goods-receipts/create/${purchaseOrder.id}`)"
               >
                 Terima Barang
+              </button>
+
+              <button
+                v-if="canComplete"
+                type="button"
+                :disabled="isActionLoading"
+                class="rounded-lg border border-[#176B4D] bg-white px-4 py-2.5 text-sm font-semibold text-[#176B4D] hover:bg-[#F0F8F5] disabled:cursor-not-allowed disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-[#176B4D] focus:ring-offset-2"
+                @click="runAction('complete')"
+              >
+                Selesaikan PO
               </button>
 
               <button

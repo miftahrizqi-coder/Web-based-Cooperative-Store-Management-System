@@ -1,447 +1,154 @@
-import { createRouter, createWebHistory } from 'vue-router'
+import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import { useAuth } from '../stores/auth'
-import SupplierProductsPage from '../pages/supplierProducts/SupplierProductsPage.vue'
-import SupplierProductFormPage from '../pages/supplierProducts/SupplierProductFormPage.vue'
+import type { UserRole } from '../types/auth'
+import { getLandingPage } from './navigation'
+
+declare module 'vue-router' {
+  interface RouteMeta {
+    guestOnly?: boolean
+    public?: boolean
+    roles?: UserRole[]
+    title?: string
+  }
+}
+
+const ADMIN: UserRole[] = ['admin']
+const ADMIN_PENGURUS: UserRole[] = ['admin', 'pengurus']
+const STAFF: UserRole[] = ['admin', 'pengurus', 'kasir']
+const ALL: UserRole[] = ['admin', 'pengurus', 'kasir', 'anggota']
+
+const page = (loader: () => Promise<unknown>, roles: UserRole[], title: string) => ({
+  component: loader as RouteRecordRaw['component'],
+  meta: { roles, title },
+})
+
+const routes: RouteRecordRaw[] = [
+  { path: '/', redirect: '/dashboard' },
+  {
+    path: '/login',
+    component: () => import('../pages/auth/LoginPage.vue'),
+    meta: { guestOnly: true, public: true, title: 'Login' },
+  },
+
+  { path: '/dashboard', ...page(() => import('../pages/dashboard/DashboardPage.vue'), STAFF, 'Dashboard') },
+  { path: '/profile', ...page(() => import('../pages/profile/ProfilePage.vue'), ALL, 'Profil') },
+
+  // Pengguna
+  { path: '/users', ...page(() => import('../pages/users/UsersPage.vue'), ADMIN, 'Pengguna') },
+  { path: '/users/create', ...page(() => import('../pages/users/UserCreatePage.vue'), ADMIN, 'Tambah Pengguna') },
+  { path: '/users/:id/edit', ...page(() => import('../pages/users/UserEditPage.vue'), ADMIN, 'Ubah Pengguna') },
+
+  // Produk & kategori
+  { path: '/products', ...page(() => import('../pages/products/ProductsPage.vue'), ADMIN, 'Produk') },
+  { path: '/products/create', ...page(() => import('../pages/products/ProductFormPage.vue'), ADMIN, 'Tambah Produk') },
+  { path: '/products/:id', ...page(() => import('../pages/products/ProductDetailPage.vue'), ADMIN, 'Detail Produk') },
+  { path: '/products/:id/edit', ...page(() => import('../pages/products/ProductFormPage.vue'), ADMIN, 'Ubah Produk') },
+  { path: '/categories', ...page(() => import('../pages/categories/CategoriesPage.vue'), ADMIN, 'Kategori') },
+
+  // Supplier
+  { path: '/suppliers', ...page(() => import('../pages/suppliers/SuppliersPage.vue'), ADMIN_PENGURUS, 'Supplier') },
+  { path: '/suppliers/create', ...page(() => import('../pages/suppliers/SupplierFormPage.vue'), ADMIN_PENGURUS, 'Tambah Supplier') },
+  { path: '/suppliers/:id/edit', ...page(() => import('../pages/suppliers/SupplierFormPage.vue'), ADMIN_PENGURUS, 'Ubah Supplier') },
+  {
+    path: '/suppliers/:id/products',
+    redirect: (to) => ({ path: '/supplier-products', query: { supplierId: String(to.params.id) } }),
+  },
+  { path: '/suppliers/:id', ...page(() => import('../pages/suppliers/SupplierDetailPage.vue'), ADMIN_PENGURUS, 'Detail Supplier') },
+  { path: '/supplier-products', ...page(() => import('../pages/supplierProducts/SupplierProductsPage.vue'), ADMIN_PENGURUS, 'Produk Supplier') },
+  { path: '/supplier-products/create', ...page(() => import('../pages/supplierProducts/SupplierProductFormPage.vue'), ADMIN_PENGURUS, 'Tambah Produk Supplier') },
+  { path: '/supplier-products/:id/edit', ...page(() => import('../pages/supplierProducts/SupplierProductFormPage.vue'), ADMIN_PENGURUS, 'Ubah Produk Supplier') },
+
+  // Anggota
+  { path: '/members', ...page(() => import('../pages/members/MembersPage.vue'), ADMIN_PENGURUS, 'Anggota') },
+  { path: '/members/create', ...page(() => import('../pages/members/MemberFormPage.vue'), ADMIN, 'Tambah Anggota') },
+  { path: '/members/:id', ...page(() => import('../pages/members/MemberDetailPage.vue'), ADMIN_PENGURUS, 'Detail Anggota') },
+  { path: '/members/:id/edit', ...page(() => import('../pages/members/MemberFormPage.vue'), ADMIN, 'Ubah Anggota') },
+
+  // Pengadaan
+  { path: '/purchase-orders', ...page(() => import('../pages/procurement/PurchaseOrdersPage.vue'), ADMIN_PENGURUS, 'Purchase Order') },
+  { path: '/purchase-orders/create', ...page(() => import('../pages/procurement/PurchaseOrderFromPage.vue'), ADMIN_PENGURUS, 'Buat PO') },
+  { path: '/purchase-orders/:id', ...page(() => import('../pages/procurement/PurchaseOrderDetailPage.vue'), ADMIN_PENGURUS, 'Detail PO') },
+  { path: '/purchase-orders/:id/edit', ...page(() => import('../pages/procurement/PurchaseOrderFromPage.vue'), ADMIN_PENGURUS, 'Ubah PO') },
+  { path: '/goods-receipts', ...page(() => import('../pages/procurement/GoodsReceiptListPage.vue'), ADMIN_PENGURUS, 'Penerimaan Barang') },
+  { path: '/goods-receipts/create', ...page(() => import('../pages/procurement/GoodsReceiptFormPage.vue'), ADMIN_PENGURUS, 'Terima Barang') },
+  { path: '/goods-receipts/create/:id', ...page(() => import('../pages/procurement/GoodsReceiptFormPage.vue'), ADMIN_PENGURUS, 'Terima Barang') },
+  { path: '/goods-receipts/:id', ...page(() => import('../pages/procurement/GoodsReceiptDetailPage.vue'), ADMIN_PENGURUS, 'Detail Penerimaan') },
+  { path: '/purchases', ...page(() => import('../pages/procurement/PurchaseListPage.vue'), ADMIN_PENGURUS, 'Pembelian') },
+  { path: '/purchases/create', ...page(() => import('../pages/procurement/PurchaseCreatePage.vue'), ADMIN_PENGURUS, 'Catat Pembelian') },
+  { path: '/purchases/:id', ...page(() => import('../pages/procurement/PurchaseDetailPage.vue'), ADMIN_PENGURUS, 'Detail Pembelian') },
+  { path: '/supplier-invoices', ...page(() => import('../pages/procurement/SupplierInvoiceListPage.vue'), ADMIN_PENGURUS, 'Invoice Supplier') },
+  { path: '/supplier-invoices/create', ...page(() => import('../pages/procurement/SupplierInvoiceCreatePage.vue'), ADMIN_PENGURUS, 'Catat Invoice') },
+  { path: '/supplier-invoices/:id', ...page(() => import('../pages/procurement/SupplierInvoiceDetailPage.vue'), ADMIN_PENGURUS, 'Detail Invoice') },
+  { path: '/supplier-payables', ...page(() => import('../pages/procurement/SupplierPayableListPage.vue'), ADMIN_PENGURUS, 'Hutang Supplier') },
+  { path: '/supplier-payments', ...page(() => import('../pages/procurement/SupplierPaymentListPage.vue'), ADMIN_PENGURUS, 'Pembayaran Supplier') },
+  { path: '/supplier-payments/create', ...page(() => import('../pages/procurement/SupplierPaymentCreatePage.vue'), ADMIN_PENGURUS, 'Catat Pembayaran') },
+  { path: '/activities', ...page(() => import('../pages/activity/ActivityListPage.vue'), ADMIN_PENGURUS, 'Timeline Pengadaan') },
+
+  // Inventory
+  { path: '/inventory', ...page(() => import('../pages/inventory/InventoryListPage.vue'), ADMIN_PENGURUS, 'Stok') },
+  { path: '/inventory/movements', ...page(() => import('../pages/inventory/StockMovementListPage.vue'), ADMIN_PENGURUS, 'Stock Movement') },
+  { path: '/inventory/adjustment', ...page(() => import('../pages/inventory/StockAdjustmentPage.vue'), ADMIN_PENGURUS, 'Stock Adjustment') },
+  { path: '/inventory/stock-opname', ...page(() => import('../pages/inventory/StockOpnamePage.vue'), ADMIN_PENGURUS, 'Stock Opname') },
+
+  // Penjualan
+  { path: '/pos', ...page(() => import('../pages/POS/POSPage.vue'), ['admin', 'kasir'], 'POS') },
+  { path: '/sales', ...page(() => import('../pages/sales/SalesPage.vue'), STAFF, 'Riwayat Penjualan') },
+  { path: '/sales/:id', ...page(() => import('../pages/sales/SaleDetailPage.vue'), STAFF, 'Detail Penjualan') },
+  { path: '/returns', ...page(() => import('../pages/returns/ReturnsPage.vue'), STAFF, 'Retur') },
+  { path: '/returns/create', ...page(() => import('../pages/returns/ReturnCreatePage.vue'), STAFF, 'Buat Retur') },
+
+  // Keuangan
+  { path: '/expenses', ...page(() => import('../pages/expenses/ExpensesPage.vue'), ADMIN_PENGURUS, 'Pengeluaran') },
+
+  // Laporan
+  { path: '/reports', redirect: '/reports/sales' },
+  { path: '/reports/sales', ...page(() => import('../pages/reports/SalesReportPage.vue'), ADMIN_PENGURUS, 'Laporan Penjualan') },
+  { path: '/reports/purchases', ...page(() => import('../pages/reports/PurchasesReportPage.vue'), ADMIN_PENGURUS, 'Laporan Pembelian') },
+  { path: '/reports/inventory', ...page(() => import('../pages/reports/InventoryReportPage.vue'), ADMIN_PENGURUS, 'Laporan Inventory') },
+  { path: '/reports/suppliers', ...page(() => import('../pages/reports/SuppliersReportPage.vue'), ADMIN_PENGURUS, 'Laporan Supplier') },
+  { path: '/reports/payables', ...page(() => import('../pages/reports/PayablesReportPage.vue'), ADMIN_PENGURUS, 'Laporan Hutang') },
+  { path: '/reports/profit', ...page(() => import('../pages/reports/ProfitReportPage.vue'), ADMIN_PENGURUS, 'Laporan Laba') },
+
+  // Administrasi
+  { path: '/audit-logs', ...page(() => import('../pages/audit/AuditLogsPage.vue'), ADMIN, 'Audit Log') },
+
+  { path: '/:pathMatch(.*)*', redirect: '/dashboard' },
+]
 
 const router = createRouter({
   history: createWebHistory(),
-  routes: [
-    {
-      path: '/',
-      redirect: '/dashboard',
-    },
-    {
-      path: '/login',
-      component: () => import('../pages/auth/LoginPage.vue'),
-      meta: {
-        guestOnly: true,
-      },
-    },
-    {
-      path: '/dashboard',
-      component: () => import('../pages/dashboard/DashboardPage.vue'),
-      meta: {
-        requiresAuth: true,
-        roles: ['admin', 'pengurus']
-      },
-    },
-    {
-      path: '/users',
-      component: () => import('../pages/users/UsersPage.vue'),
-      meta: {
-        requiresAuth: true,
-        roles: ['admin'],
-      },
-    },
-    {
-      path: '/users/create',
-      component: () => import('../pages/users/UserCreatePage.vue'),
-      meta: {
-        requiresAuth: true,
-        roles: ['admin'],
-      },
-    },
-    {
-      path: '/users/:id/edit',
-      component: () => import('../pages/users/UserEditPage.vue'),
-      meta: { 
-        requiresAuth: true,
-        roles: ['admin'],
-      },
-    },
-    {
-      path: '/products',
-      component: () => import('../pages/products/ProductsPage.vue'),
-      meta: {
-        requiresAuth: true,
-        roles: ['admin'],
-      },
-    },
-    {
-      path: '/products/create',
-      component: () => import('../pages/products/ProductFormPage.vue'),
-      meta: {
-        requiresAuth: true,
-        roles: ['admin'],
-      },
-    },
-    {
-      path: '/products/:id',
-      component: () => import('../pages/products/ProductDetailPage.vue'),
-      meta: {
-        requiresAuth: true,
-        roles: ['admin'],
-      },
-    },
-    {
-      path: '/products/:id/edit',
-      component: () => import('../pages/products/ProductFormPage.vue'),
-      meta: {
-        requiresAuth: true,
-        roles: ['admin'],
-      },
-    },
-    {
-      path: '/purchase-orders',
-      component: () => import('../pages/procurement/PurchaseOrdersPage.vue'),
-      meta: {
-        requiresAuth: true,
-        roles: ['admin', 'pengurus'],
-      },
-    },
-    {
-      path: '/purchase-orders/create',
-      component: () => import('../pages/procurement/PurchaseOrderFromPage.vue'),
-      meta: {
-        requiresAuth: true,
-        roles: ['admin', 'pengurus'],
-      },
-    },
-    {
-      path: '/purchase-orders/:id',
-      component: () => import('../pages/procurement/PurchaseOrderDetailPage.vue'),
-      meta: {
-        requiresAuth: true,
-        roles: ['admin', 'pengurus'],
-      },
-    },
-    {
-      path: '/purchase-orders/:id/edit',
-      component: () => import('../pages/procurement/PurchaseOrderFromPage.vue'),
-      meta: {
-        requiresAuth: true,
-        roles: ['admin', 'pengurus'],
-      },
-    },
-    {
-      path: '/suppliers',
-      component: () => import('../pages/suppliers/SuppliersPage.vue'),
-      meta: {
-        requiresAuth: true,
-        roles: ['admin', 'pengurus'],
-      },
-    },
-    {
-      path: '/suppliers/create',
-      component: () => import('../pages/suppliers/SupplierFormPage.vue'),
-      meta: {
-        requiresAuth: true,
-        roles: ['admin', 'pengurus'],
-      },
-    },
-    {
-      path: '/suppliers/:id/edit',
-      component: () => import('../pages/suppliers/SupplierFormPage.vue'),
-      meta: {
-        requiresAuth: true,
-        roles: ['admin', 'pengurus'],
-      },
-    },
-    {
-      path: '/suppliers/:id',
-      component: () => import('../pages/suppliers/SupplierDetailPage.vue'),
-      meta: {
-        requiresAuth: true,
-        roles: ['admin', 'pengurus'],
-      },
-    },
-    {
-      path: '/supplier-products',
-      component: SupplierProductsPage,
-      meta: {
-        requiresAuth: true,
-        roles: ['admin', 'pengurus'],
-      },
-    },
-    {
-      path: '/supplier-products/create',
-      component: SupplierProductFormPage,
-      meta: {
-        requiresAuth: true,
-        roles: ['admin', 'pengurus'],
-      },
-    },
-    {
-      path: '/supplier-products/:id/edit',
-      component: SupplierProductFormPage,
-      meta: {
-        requiresAuth: true,
-        roles: ['admin', 'pengurus'],
-      },
-    },
-    {
-      path: '/goods-receipts',
-      name: 'goods-receipts',
-      component: () => import('../pages/procurement/GoodsReceiptListPage.vue'),
-      meta: {
-        requiresAuth: true,
-        roles: ['admin', 'pengurus'],
-      },
-    },
-
-    {
-      path: '/goods-receipts/create/:id',
-      name: 'goods-receipt-create',
-      component: () =>
-        import('../pages/procurement/GoodsReceiptFormPage.vue'),
-      meta: {
-        requiresAuth: true,
-        roles: ['admin', 'pengurus'],
-      },
-    },
-
-    {
-      path: '/goods-receipts/:id',
-      name: 'goods-receipt-detail',
-      component: () =>
-        import('../pages/procurement/GoodsReceiptDetailPage.vue'),
-      meta: {
-        requiresAuth: true,
-        roles: ['admin', 'pengurus'],
-      },
-    },
-    {
-      path: '/purchases',
-      name: 'purchases',
-      component: () =>
-        import('../pages/procurement/PurchaseListPage.vue'),
-      meta: {
-        requiresAuth: true,
-        roles: ['admin', 'pengurus'],
-      },
-    },
-    {
-      path: '/purchases/create',
-      name: 'purchase-create',
-      component: () =>
-        import('../pages/procurement/PurchaseCreatePage.vue'),
-      meta: {
-        requiresAuth: true,
-        roles: ['admin', 'pengurus'],
-      },
-    },
-    {
-      path: '/purchases/:id',
-      name: 'purchase-detail',
-      component: () =>
-        import('../pages/procurement/PurchaseDetailPage.vue'),
-      meta: {
-        requiresAuth: true,
-        roles: ['admin', 'pengurus'],
-      },
-    },
-    {
-      path: '/supplier-invoices',
-      name: 'supplier-invoice',
-      component: () =>
-        import(
-          '../pages/procurement/SupplierInvoiceListPage.vue'
-        ),
-      meta: {
-        requiresAuth: true,
-        roles: ['admin', 'pengurus'],
-      },
-    },
-    {
-      path: '/supplier-invoices/create',
-      name: 'supplier-invoice-create',
-      component: () =>
-        import(
-          '../pages/procurement/SupplierInvoiceCreatePage.vue'
-        ),
-      meta: {
-        requiresAuth: true,
-        roles: ['admin', 'pengurus'],
-      },
-    },
-    {
-      path: '/supplier-invoices/:id',
-      name: 'supplier-invoice-detail',
-      component: () =>
-        import(
-          '../pages/procurement/SupplierInvoiceDetailPage.vue'
-        ),
-      meta: {
-        requiresAuth: true,
-        roles: ['admin', 'pengurus'],
-      },
-    },
-    {
-      path: '/supplier-payables',
-      name: 'supplier-payables',
-      component: () =>
-        import('../pages/procurement/SupplierPayableListPage.vue'),
-      meta: {
-        requiresAuth: true,
-        roles: ['admin', 'pengurus'],
-      },
-    },
-    {
-      path: '/supplier-payments',
-      name: 'supplier-payments',
-      component: () =>
-        import('../pages/procurement/SupplierPaymentListPage.vue'),
-      meta: {
-        requiresAuth: true,
-        roles: ['admin', 'pengurus'],
-      },
-    },
-    {
-      path: '/supplier-payments/create',
-      name: 'supplier-payment-create',
-      component: () =>
-        import('../pages/procurement/SupplierPaymentCreatePage.vue'),
-      meta: {
-        requiresAuth: true,
-        roles: ['admin', 'pengurus'],
-      },
-    },
-    {
-      path: '/activities',
-      component: () =>
-        import('../pages/activity/ActivityListPage.vue'),
-      meta: {
-        roles: ['admin', 'pengurus'],
-      },
-    },
-    {
-      path: '/inventory',
-      name: 'inventory',
-      component: () =>
-        import('../pages/inventory/InventoryListPage.vue'),
-      meta: {
-        roles: ['admin', 'pengurus'],
-      },
-    },
-    {
-      path: '/inventory/movements',
-      name: 'stock-movements',
-      component: () =>
-        import(
-          '../pages/inventory/StockMovementListPage.vue'
-        ),
-      meta: {
-        roles: ['admin', 'pengurus'],
-      },
-    },
-    {
-      path: '/inventory/adjustment',
-      name: 'inventory-adjustment',
-      component: () =>
-        import('../pages/inventory/StockAdjustmentPage.vue'),
-      meta: {
-        roles: ['admin', 'pengurus'],
-      },
-    },
-    {
-      path: '/inventory/stock-opname',
-      component: () =>
-        import(
-          '../pages/inventory/StockOpnamePage.vue'
-        ),
-      meta: {
-        roles: ['admin', 'pengurus'],
-      },
-    },
-    {
-      path: '/pos',
-      name: 'pos',
-      component: () =>
-        import('../pages/POS/POSPage.vue'),
-      meta: {
-        requiresAuth: true,
-        roles: ['kasir'],
-      },
-    },
-    {
-      path: '/sales',
-      name: 'sales',
-      component: () =>
-        import('../pages/sales/SalesPage.vue'),
-      meta: {
-        requiresAuth: true,
-        roles: ['admin', 'pengurus', 'kasir'],
-      },
-    },
-    {
-      path: '/sales/:id',
-      name: 'sale-detail',
-      component: () =>
-        import('../pages/sales/SaleDetailPage.vue'),
-      meta: {
-        requiresAuth: true,
-        roles: ['admin', 'pengurus', 'kasir'],
-      },
-    },
-    {
-      path: '/reports/sales',
-      name: 'sales-report',
-      component: () =>
-        import('../pages/reports/SalesReportPage.vue'),
-      meta: {
-        requiresAuth: true,
-        roles: ['admin', 'pengurus'],
-      },
-    },
-    {
-      path: '/categories',
-      name: 'categories',
-      component: () => import('../pages/categories/CategoriesPage.vue'),
-      meta: {
-        requiresAuth: true,
-        roles: ['admin', 'pengurus'],
-      },
-    },
-    {
-      path: '/categories/create',
-      name: 'category-create',
-      component: () => import('../pages/categories/CategoryFormPage.vue'),
-      meta: {
-        requiresAuth: true,
-        roles: ['admin'],
-      },
-    },
-    {
-      path: '/categories/:id/edit',
-      name: 'category-edit',
-      component: () => import('../pages/categories/CategoryFormPage.vue'),
-      meta: {
-        requiresAuth: true,
-        roles: ['admin'],
-      },
-    },
-  ],
+  routes,
 })
 
 router.beforeEach(async (to) => {
-  const {
-    isAuthenticated,
-    currentUser,
-    restoreSession,
-  } = useAuth()
+  const { isAuthenticated, currentUser, restoreSession } = useAuth()
 
   if (isAuthenticated.value && !currentUser.value) {
     await restoreSession()
   }
 
-  if (to.meta.requiresAuth && !isAuthenticated.value) {
-    return '/login'
+  if (to.meta.guestOnly) {
+    return isAuthenticated.value && currentUser.value
+      ? getLandingPage(currentUser.value.role)
+      : true
   }
 
-  if (to.meta.guestOnly && isAuthenticated.value) {
-    return '/dashboard'
+  // Semua halaman selain yang public wajib login.
+  if (!to.meta.public && (!isAuthenticated.value || !currentUser.value)) {
+    return { path: '/login', query: to.fullPath !== '/' ? { redirect: to.fullPath } : {} }
   }
 
-  const allowedRoles = to.meta.roles as string[] | undefined
-
-  if (
-    allowedRoles &&
-    (!currentUser.value || !allowedRoles.includes(currentUser.value.role))
-  ) {
-    return '/dashboard'
+  const roles = to.meta.roles
+  if (roles && currentUser.value && !roles.includes(currentUser.value.role)) {
+    const landing = getLandingPage(currentUser.value.role)
+    return to.path === landing ? true : landing
   }
 
   return true
+})
+
+router.afterEach((to) => {
+  document.title = to.meta.title ? `${to.meta.title} · Koprom` : 'Koprom'
 })
 
 export default router

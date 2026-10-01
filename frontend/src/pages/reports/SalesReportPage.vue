@@ -1,398 +1,212 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
-import { useAuth } from '../../stores/auth'
+import { onMounted, reactive, ref } from 'vue'
+import { getCategories } from '../../api/categories'
+import { getMembers } from '../../api/members'
+import { getProducts } from '../../api/products'
 import { getSalesReport } from '../../api/reports'
-import type { SalesReport } from '../../types/salesReport'
+import { getUsers } from '../../api/users'
+import PeriodFilter from '../../components/reports/PeriodFilter.vue'
+import ReportHeader from '../../components/reports/ReportHeader.vue'
+import ReportTabs from '../../components/reports/ReportTabs.vue'
+import { errorMessage } from '../../services/api'
+import { useAuth } from '../../stores/auth'
+import type { Category } from '../../types/category'
+import type { Member } from '../../types/member'
+import type { Product } from '../../types/product'
+import type { GroupBy, SalesReport } from '../../types/report'
+import { PAYMENT_METHOD_LABELS, type PaymentMethod } from '../../types/sale'
+import type { User } from '../../types/user'
+import { downloadCsv, firstDayOfMonth, formatCurrency, formatNumber, toDateInput } from '../../utils/format'
 
-const { token } = useAuth()
+const { hasRole } = useAuth()
 
-const today = new Date().toISOString().slice(0, 10)
-
-const startDate = ref(today)
-const endDate = ref(today)
+const period = ref<{ dateFrom: string; dateTo: string; groupBy?: GroupBy }>({
+  dateFrom: firstDayOfMonth(),
+  dateTo: toDateInput(),
+  groupBy: 'day',
+})
+const extra = reactive({ cashierId: '', productId: '', categoryId: '', memberId: '' })
+const cashiers = ref<User[]>([])
+const products = ref<Product[]>([])
+const categories = ref<Category[]>([])
+const members = ref<Member[]>([])
 
 const report = ref<SalesReport | null>(null)
-
 const isLoading = ref(false)
-const errorMessage = ref('')
-const fieldError = ref('')
+const loadError = ref('')
 
-const hasData = computed(() => {
-  if (!report.value) {
-    return false
-  }
-
-  return (
-    report.value.total_transactions > 0 ||
-    report.value.total_items_sold > 0 ||
-    report.value.total_sales > 0
-  )
-})
-
-function formatCurrency(value: number) {
-  return new Intl.NumberFormat('id-ID', {
-    style: 'currency',
-    currency: 'IDR',
-    maximumFractionDigits: 0,
-  }).format(Number(value) || 0)
-}
-
-function formatNumber(value: number) {
-  return new Intl.NumberFormat('id-ID', {
-    maximumFractionDigits: 2,
-  }).format(Number(value) || 0)
-}
-
-function validateDateRange() {
-  fieldError.value = ''
-
-  if (!startDate.value || !endDate.value) {
-    fieldError.value = 'Tanggal mulai dan tanggal akhir wajib diisi.'
-    return false
-  }
-
-  if (startDate.value > endDate.value) {
-    fieldError.value =
-      'Tanggal mulai tidak boleh lebih besar dari tanggal akhir.'
-    return false
-  }
-
-  return true
-}
-
-async function loadReport() {
-  errorMessage.value = ''
-
-  if (!validateDateRange()) {
-    return
-  }
-
-  if (!token.value) {
-    errorMessage.value =
-      'Sesi login tidak ditemukan. Silakan login kembali.'
-    return
-  }
-
+async function load() {
   isLoading.value = true
-
+  loadError.value = ''
   try {
-    report.value = await getSalesReport(token.value, {
-      start_date: startDate.value,
-      end_date: endDate.value,
-    })
+    report.value = await getSalesReport({ ...period.value, ...extra })
   } catch (error) {
-    report.value = null
-
-    errorMessage.value =
-      error instanceof Error
-        ? error.message
-        : 'Laporan penjualan gagal dimuat.'
+    loadError.value = errorMessage(error, 'Gagal memuat laporan penjualan.')
   } finally {
     isLoading.value = false
   }
 }
 
-function setToday() {
-  startDate.value = today
-  endDate.value = today
-  loadReport()
+function exportCsv() {
+  if (!report.value) return
+  downloadCsv(
+    `laporan-penjualan-${period.value.dateFrom}-${period.value.dateTo}`,
+    ['Periode', 'Jumlah transaksi', 'Barang terjual', 'Penjualan kotor', 'Diskon', 'Penjualan bersih'],
+    report.value.series.map((row) => [row.period, row.transactionCount, row.itemsSold, row.grossSales, row.discount, row.netSales]),
+  )
 }
 
-function setLast7Days() {
-  const end = new Date()
-  const start = new Date()
-
-  start.setDate(start.getDate() - 6)
-
-  startDate.value = start.toISOString().slice(0, 10)
-  endDate.value = end.toISOString().slice(0, 10)
-
-  loadReport()
-}
-
-function setLast30Days() {
-  const end = new Date()
-  const start = new Date()
-
-  start.setDate(start.getDate() - 29)
-
-  startDate.value = start.toISOString().slice(0, 10)
-  endDate.value = end.toISOString().slice(0, 10)
-
-  loadReport()
-}
-
-onMounted(loadReport)
+onMounted(async () => {
+  const [productList, categoryList, memberList] = await Promise.allSettled([
+    getProducts(null, {}),
+    getCategories(),
+    getMembers(),
+  ])
+  if (productList.status === 'fulfilled') products.value = productList.value
+  if (categoryList.status === 'fulfilled') categories.value = categoryList.value
+  if (memberList.status === 'fulfilled') members.value = memberList.value
+  // Daftar kasir hanya bisa diambil admin (endpoint /api/users).
+  if (hasRole('admin')) {
+    try {
+      cashiers.value = (await getUsers()).filter((u) => u.role === 'kasir' || u.role === 'admin')
+    } catch {
+      cashiers.value = []
+    }
+  }
+  await load()
+})
 </script>
 
 <template>
-  <div class="space-y-6">
-    <div>
-      <h1 class="text-2xl font-bold text-[#12372A]">
-        Laporan Penjualan
-      </h1>
+  <main class="page">
+    <div class="page-inner print-area">
+      <ReportTabs />
+      <ReportHeader
+        title="Laporan Penjualan"
+        :subtitle="`Periode ${period.dateFrom} s/d ${period.dateTo}. Transaksi dibatalkan tidak dihitung; retur mengurangi pendapatan.`"
+        :can-export="Boolean(report)"
+        @export="exportCsv"
+      />
 
-      <p class="mt-1 text-sm text-slate-600">
-        Ringkasan transaksi dan penjualan berdasarkan periode yang dipilih.
-      </p>
+      <PeriodFilter v-model="period" show-group-by :loading="isLoading" @apply="load">
+        <label v-if="cashiers.length" class="field">
+          <span class="label">Kasir</span>
+          <select v-model="extra.cashierId" class="select">
+            <option value="">Semua</option>
+            <option v-for="user in cashiers" :key="user.id" :value="user.id">{{ user.name }}</option>
+          </select>
+        </label>
+        <label class="field">
+          <span class="label">Kategori</span>
+          <select v-model="extra.categoryId" class="select">
+            <option value="">Semua</option>
+            <option v-for="category in categories" :key="category.id" :value="category.id">{{ category.name }}</option>
+          </select>
+        </label>
+        <label class="field">
+          <span class="label">Produk</span>
+          <select v-model="extra.productId" class="select">
+            <option value="">Semua</option>
+            <option v-for="product in products" :key="product.id" :value="product.id">{{ product.sku }} — {{ product.name }}</option>
+          </select>
+        </label>
+        <label class="field">
+          <span class="label">Anggota</span>
+          <select v-model="extra.memberId" class="select">
+            <option value="">Semua</option>
+            <option v-for="member in members" :key="member.id" :value="member.id">{{ member.memberNumber }} — {{ member.name }}</option>
+          </select>
+        </label>
+      </PeriodFilter>
+
+      <div v-if="loadError" class="alert alert-error">{{ loadError }}</div>
+
+      <template v-if="report">
+        <section class="kpi-grid">
+          <div class="kpi"><div class="kpi-label">Jumlah transaksi</div><div class="kpi-value">{{ formatNumber(report.summary.transactionCount) }}</div><div class="kpi-context">{{ report.summary.cancelledCount }} dibatalkan</div></div>
+          <div class="kpi"><div class="kpi-label">Barang terjual</div><div class="kpi-value">{{ formatNumber(report.summary.itemsSold) }}</div><div class="kpi-context">{{ formatNumber(report.summary.returnedItems) }} diretur</div></div>
+          <div class="kpi"><div class="kpi-label">Total penjualan</div><div class="kpi-value">{{ formatCurrency(report.summary.grossSales) }}</div><div class="kpi-context">Sebelum diskon</div></div>
+          <div class="kpi"><div class="kpi-label">Diskon</div><div class="kpi-value">{{ formatCurrency(report.summary.discount) }}</div></div>
+          <div class="kpi"><div class="kpi-label">Retur penjualan</div><div class="kpi-value">{{ formatCurrency(report.summary.returns) }}</div></div>
+          <div class="kpi"><div class="kpi-label">Pendapatan</div><div class="kpi-value" style="color: var(--c-primary)">{{ formatCurrency(report.summary.revenue) }}</div><div class="kpi-context">Rata-rata {{ formatCurrency(report.summary.averageTransaction) }}/transaksi</div></div>
+        </section>
+
+        <section class="card">
+          <div class="card-header"><h2 class="card-title">Per periode</h2></div>
+          <div class="table-wrap">
+            <table class="table">
+              <thead><tr><th>Periode</th><th class="num">Transaksi</th><th class="num">Barang</th><th class="num">Kotor</th><th class="num">Diskon</th><th class="num">Bersih</th></tr></thead>
+              <tbody>
+                <tr v-for="row in report.series" :key="row.period">
+                  <td class="mono">{{ row.period }}</td>
+                  <td class="num">{{ formatNumber(row.transactionCount) }}</td>
+                  <td class="num">{{ formatNumber(row.itemsSold) }}</td>
+                  <td class="num">{{ formatCurrency(row.grossSales) }}</td>
+                  <td class="num">{{ formatCurrency(row.discount) }}</td>
+                  <td class="num strong">{{ formatCurrency(row.netSales) }}</td>
+                </tr>
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td>Total</td>
+                  <td class="num">{{ formatNumber(report.summary.transactionCount) }}</td>
+                  <td class="num">{{ formatNumber(report.summary.itemsSold) }}</td>
+                  <td class="num">{{ formatCurrency(report.summary.grossSales) }}</td>
+                  <td class="num">{{ formatCurrency(report.summary.discount) }}</td>
+                  <td class="num">{{ formatCurrency(report.summary.totalSales) }}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </section>
+
+        <div style="display: grid; gap: 20px; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr))">
+          <section class="card">
+            <div class="card-header"><h2 class="card-title">Per produk</h2></div>
+            <div v-if="!report.byProduct.length" class="empty">Tidak ada data.</div>
+            <div v-else class="table-wrap">
+              <table class="table">
+                <thead><tr><th>Produk</th><th class="num">Qty</th><th class="num">Penjualan</th></tr></thead>
+                <tbody>
+                  <tr v-for="row in report.byProduct" :key="row.productId">
+                    <td>{{ row.name }}<div class="mono muted">{{ row.sku }}</div></td>
+                    <td class="num">{{ formatNumber(row.quantity) }}</td>
+                    <td class="num">{{ formatCurrency(row.netSales) }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+          <section class="card">
+            <div class="card-header"><h2 class="card-title">Per kasir</h2></div>
+            <div v-if="!report.byCashier.length" class="empty">Tidak ada data.</div>
+            <div v-else class="table-wrap">
+              <table class="table">
+                <thead><tr><th>Kasir</th><th class="num">Transaksi</th><th class="num">Penjualan</th></tr></thead>
+                <tbody>
+                  <tr v-for="row in report.byCashier" :key="row.cashierId">
+                    <td>{{ row.cashierName }}</td>
+                    <td class="num">{{ formatNumber(row.transactionCount) }}</td>
+                    <td class="num">{{ formatCurrency(row.netSales) }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="card-header" style="border-top: 1px solid var(--c-border-soft)"><h2 class="card-title">Per metode pembayaran</h2></div>
+            <div class="table-wrap">
+              <table class="table">
+                <tbody>
+                  <tr v-for="row in report.byPaymentMethod" :key="row.method">
+                    <td>{{ PAYMENT_METHOD_LABELS[row.method as PaymentMethod] ?? row.method }}</td>
+                    <td class="num">{{ formatNumber(row.transactionCount) }} trx</td>
+                    <td class="num">{{ formatCurrency(row.netSales) }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      </template>
     </div>
-
-    <!-- Filter -->
-    <section
-      class="rounded-xl border border-slate-200 bg-white p-5"
-    >
-      <div
-        class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between"
-      >
-        <div class="grid flex-1 gap-4 sm:grid-cols-2">
-          <div>
-            <label
-              for="start-date"
-              class="block text-sm font-medium text-slate-700"
-            >
-              Tanggal mulai
-            </label>
-
-            <input
-              id="start-date"
-              v-model="startDate"
-              type="date"
-              class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-[#176B4D] focus:ring-2 focus:ring-[#176B4D]/20"
-            />
-          </div>
-
-          <div>
-            <label
-              for="end-date"
-              class="block text-sm font-medium text-slate-700"
-            >
-              Tanggal akhir
-            </label>
-
-            <input
-              id="end-date"
-              v-model="endDate"
-              type="date"
-              class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-[#176B4D] focus:ring-2 focus:ring-[#176B4D]/20"
-            />
-          </div>
-        </div>
-
-        <div class="flex flex-wrap gap-2">
-          <button
-            type="button"
-            class="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-            @click="setToday"
-          >
-            Hari ini
-          </button>
-
-          <button
-            type="button"
-            class="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-            @click="setLast7Days"
-          >
-            7 hari
-          </button>
-
-          <button
-            type="button"
-            class="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-            @click="setLast30Days"
-          >
-            30 hari
-          </button>
-
-          <button
-            type="button"
-            class="rounded-lg bg-[#176B4D] px-4 py-2 text-sm font-semibold text-white hover:bg-[#12372A] disabled:cursor-not-allowed disabled:opacity-50"
-            :disabled="isLoading"
-            @click="loadReport"
-          >
-            {{ isLoading ? 'Memuat...' : 'Tampilkan' }}
-          </button>
-        </div>
-      </div>
-
-      <div
-        v-if="fieldError"
-        class="mt-4 rounded-lg border border-[#E7B8B2] bg-[#FEF3F2] px-4 py-3 text-sm text-[#C0392B]"
-      >
-        {{ fieldError }}
-      </div>
-    </section>
-
-    <!-- Loading -->
-    <div
-      v-if="isLoading"
-      class="rounded-xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-600"
-    >
-      Memuat laporan penjualan...
-    </div>
-
-    <!-- Error -->
-    <div
-      v-else-if="errorMessage"
-      class="rounded-xl border border-[#E7B8B2] bg-[#FEF3F2] p-5 text-sm text-[#C0392B]"
-    >
-      <p class="font-semibold">
-        Laporan gagal dimuat
-      </p>
-
-      <p class="mt-1">
-        {{ errorMessage }}
-      </p>
-
-      <button
-        type="button"
-        class="mt-3 rounded-lg bg-[#C0392B] px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
-        @click="loadReport"
-      >
-        Coba lagi
-      </button>
-    </div>
-
-    <!-- Report -->
-    <template v-else-if="report">
-      <section
-        class="grid gap-4 sm:grid-cols-2 xl:grid-cols-5"
-      >
-        <div
-          class="rounded-xl border border-slate-200 bg-white p-5"
-        >
-          <p class="text-sm text-slate-500">
-            Total transaksi
-          </p>
-
-          <p class="mt-2 text-2xl font-bold text-[#12372A]">
-            {{ formatNumber(report.total_transactions) }}
-          </p>
-        </div>
-
-        <div
-          class="rounded-xl border border-slate-200 bg-white p-5"
-        >
-          <p class="text-sm text-slate-500">
-            Total item terjual
-          </p>
-
-          <p class="mt-2 text-2xl font-bold text-[#12372A]">
-            {{ formatNumber(report.total_items_sold) }}
-          </p>
-        </div>
-
-        <div
-          class="rounded-xl border border-slate-200 bg-white p-5"
-        >
-          <p class="text-sm text-slate-500">
-            Total penjualan
-          </p>
-
-          <p class="mt-2 text-xl font-bold text-[#12372A]">
-            {{ formatCurrency(report.total_sales) }}
-          </p>
-        </div>
-
-        <div
-          class="rounded-xl border border-slate-200 bg-white p-5"
-        >
-          <p class="text-sm text-slate-500">
-            Discount
-          </p>
-
-          <p class="mt-2 text-xl font-bold text-[#12372A]">
-            {{ formatCurrency(report.discount) }}
-          </p>
-        </div>
-
-        <div
-          class="rounded-xl border border-[#B9DEC9] bg-[#F0F8F5] p-5"
-        >
-          <p class="text-sm text-[#176B4D]">
-            Revenue
-          </p>
-
-          <p class="mt-2 text-xl font-bold text-[#12372A]">
-            {{ formatCurrency(report.revenue) }}
-          </p>
-        </div>
-      </section>
-
-      <section
-        class="rounded-xl border border-slate-200 bg-white p-5"
-      >
-        <div
-          class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"
-        >
-          <div>
-            <h2 class="font-semibold text-[#12372A]">
-              Ringkasan periode
-            </h2>
-
-            <p class="mt-1 text-sm text-slate-500">
-              {{ report.start_date }} sampai {{ report.end_date }}
-            </p>
-          </div>
-
-          <div
-            class="rounded-lg bg-slate-50 px-4 py-2 text-sm text-slate-600"
-          >
-            Transaksi PAID
-          </div>
-        </div>
-
-        <div
-          v-if="!hasData"
-          class="mt-6 rounded-lg border border-dashed border-slate-300 p-8 text-center"
-        >
-          <p class="font-medium text-slate-700">
-            Belum ada penjualan pada periode ini.
-          </p>
-
-          <p class="mt-1 text-sm text-slate-500">
-            Coba pilih periode lain untuk melihat data penjualan.
-          </p>
-        </div>
-
-        <div
-          v-else
-          class="mt-6 grid gap-4 md:grid-cols-2"
-        >
-          <div class="rounded-lg bg-slate-50 p-4">
-            <p class="text-sm text-slate-500">
-              Penjualan
-            </p>
-
-            <p class="mt-1 text-lg font-semibold text-[#12372A]">
-              {{ formatCurrency(report.total_sales) }}
-            </p>
-          </div>
-
-          <div class="rounded-lg bg-slate-50 p-4">
-            <p class="text-sm text-slate-500">
-              Revenue
-            </p>
-
-            <p class="mt-1 text-lg font-semibold text-[#176B4D]">
-              {{ formatCurrency(report.revenue) }}
-            </p>
-          </div>
-        </div>
-      </section>
-    </template>
-
-    <!-- Empty -->
-    <div
-      v-else
-      class="rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center"
-    >
-      <p class="font-medium text-slate-700">
-        Belum ada data laporan.
-      </p>
-
-      <p class="mt-1 text-sm text-slate-500">
-        Pilih periode lalu tampilkan laporan.
-      </p>
-    </div>
-  </div>
+  </main>
 </template>

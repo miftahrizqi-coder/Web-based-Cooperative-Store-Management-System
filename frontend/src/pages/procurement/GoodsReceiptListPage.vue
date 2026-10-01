@@ -66,14 +66,14 @@ function receiptItems(receipt: GoodsReceipt): unknown[] {
 }
 
 function totalReceived(receipt: GoodsReceipt): number {
-  return receiptItems(receipt).reduce(
+  return receiptItems(receipt).reduce<number>(
     (total, item) => total + readNumber(item, 'receivedQuantity'),
     0,
   )
 }
 
 function totalAccepted(receipt: GoodsReceipt): number {
-  return receiptItems(receipt).reduce(
+  return receiptItems(receipt).reduce<number>(
     (total, item) =>
       total +
       readNumber(item, 'acceptedQuantity'),
@@ -82,7 +82,7 @@ function totalAccepted(receipt: GoodsReceipt): number {
 }
 
 function totalRejected(receipt: GoodsReceipt): number {
-  return receiptItems(receipt).reduce(
+  return receiptItems(receipt).reduce<number>(
     (total, item) =>
       total +
       readNumber(item, 'rejectedQuantity'),

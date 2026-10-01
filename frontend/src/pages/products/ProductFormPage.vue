@@ -3,9 +3,9 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { createProduct, getProduct, updateProduct } from '../../api/products'
 import { useAuth } from '../../stores/auth'
+import { getCategories } from '../../api/categories'
+import type { Category } from '../../types/category'
 import type { Product } from '../../types/product'
-import { getCategories, getCategory } from '../../api/categories'
-import type { Category } from '../../api/categories'
 
 const route = useRoute()
 const router = useRouter()
@@ -24,17 +24,20 @@ const sellingPrice = ref(0)
 const stock = ref(0)
 const minimumStock = ref(0)
 const isActive = ref(true)
+const categories = ref<Category[]>([])
+const selectableCategories = computed(() =>
+  categories.value.filter((category) => category.isActive || category.id === categoryId.value),
+)
 
 const isLoading = ref(isEdit)
 const isSaving = ref(false)
 const errorMessage = ref('')
 const fieldError = ref('')
-const categories = ref<Category[]>([])
-const isLoadingCategories = ref(false)
+
 const formTitle = computed(() => (isEdit ? 'Edit produk' : 'Tambah produk'))
 const formDescription = computed(() =>
   isEdit
-    ? 'Perbarui informasi produk, harga, stok, dan status penggunaan.'
+    ? 'Perbarui informasi produk, harga, dan status. Stok diubah melalui Stock Adjustment / Stock Opname agar tercatat.'
     : 'Lengkapi informasi dasar, harga, stok, SKU, dan barcode sebelum menyimpan produk.',
 )
 
@@ -85,21 +88,7 @@ function validate() {
   }
 
   if (!categoryId.value.trim()) {
-    fieldError.value = 'kategori wajib diisi.'
-    return false
-  }
-    const selectedCategory = categories.value.find(
-    (category) => category.id === categoryId.value,
-  )
-
-  if (!selectedCategory) {
-    fieldError.value = 'Kategori yang dipilih tidak valid.'
-    return false
-  }
-
-  if (!isEdit && !selectedCategory.is_active) {
-    fieldError.value =
-      'Produk baru hanya dapat menggunakan kategori Active.'
+    fieldError.value = 'Kategori wajib dipilih.'
     return false
   }
 
@@ -125,13 +114,37 @@ function fillForm(product: Product) {
   sku.value = product.sku
   barcode.value = product.barcode ?? ''
   name.value = product.name
-  categoryId.value = product.category_id
+  categoryId.value = product.categoryId
   unit.value = product.unit
-  purchasePrice.value = product.purchase_price
-  sellingPrice.value = product.selling_price
+  purchasePrice.value = product.purchasePrice ?? 0
+  sellingPrice.value = product.sellingPrice
   stock.value = product.stock
-  minimumStock.value = product.minimum_stock
-  isActive.value = product.is_active
+  minimumStock.value = product.minimumStock
+  isActive.value = product.isActive
+}
+
+async function loadProduct() {
+  try {
+    categories.value = await getCategories()
+  } catch {
+    categories.value = []
+  }
+
+  if (!isEdit || !token.value || !productId) {
+    isLoading.value = false
+    return
+  }
+
+  try {
+    fillForm(await getProduct(token.value, productId))
+  } catch (error) {
+    errorMessage.value =
+      error instanceof Error
+        ? error.message
+        : 'Gagal mengambil data produk.'
+  } finally {
+    isLoading.value = false
+  }
 }
 
 async function handleSubmit() {
@@ -153,21 +166,21 @@ async function handleSubmit() {
       sku: sku.value.trim(),
       barcode: barcode.value.trim() || null,
       name: name.value.trim(),
-      category_id: categoryId.value.trim(),
+      categoryId: categoryId.value,
       unit: unit.value.trim(),
-      purchase_price: purchasePrice.value,
-      selling_price: sellingPrice.value,
-      stock: stock.value,
-      minimum_stock: minimumStock.value,
+      purchasePrice: purchasePrice.value,
+      sellingPrice: sellingPrice.value,
+      minimumStock: minimumStock.value,
     }
 
     if (isEdit && productId) {
       await updateProduct(token.value, productId, {
         ...payload,
-        is_active: isActive.value,
+        isActive: isActive.value,
       })
     } else {
-      await createProduct(token.value, payload)
+      // Stok awal dicatat backend sebagai stock movement.
+      await createProduct(token.value, { ...payload, stock: stock.value })
     }
 
     await router.push('/products')
@@ -181,61 +194,7 @@ async function handleSubmit() {
   }
 }
 
-async function loadCategories() {
-  if (!token.value) {
-    errorMessage.value =
-      'Sesi login tidak ditemukan. Silakan login kembali.'
-    isLoading.value = false
-    return
-  }
-
-  isLoadingCategories.value = true
-  errorMessage.value = ''
-
-  try {
-    // Untuk create: hanya kategori Active.
-    categories.value = await getCategories(
-      token.value,
-      true,
-    )
-
-    // Untuk edit: ambil Product terlebih dahulu.
-    if (isEdit && productId) {
-      const product = await getProduct(
-        token.value,
-        productId,
-      )
-
-      fillForm(product)
-
-      // Jika kategori Product sudah inactive,
-      // tambahkan kategori tersebut agar tetap terlihat
-      // sebagai kategori yang sedang digunakan.
-      const currentCategoryExists = categories.value.some(
-        (category) => category.id === product.category_id,
-      )
-
-      if (!currentCategoryExists) {
-        const currentCategory = await getCategory(
-          token.value,
-          product.category_id,
-        )
-
-        categories.value.push(currentCategory)
-      }
-    }
-  } catch (error) {
-    errorMessage.value =
-      error instanceof Error
-        ? error.message
-        : 'Gagal mengambil data Product dan Category.'
-  } finally {
-    isLoadingCategories.value = false
-    isLoading.value = false
-  }
-}
-
-onMounted(loadCategories)
+onMounted(loadProduct)
 </script>
 
 <template>
@@ -426,46 +385,22 @@ onMounted(loadCategories)
                 </label>
 
                 <label class="block">
-                  <span
-                    class="mb-1.5 block text-[13px] font-medium leading-[18px] text-[#46514B]"
-                  >
+                  <span class="mb-1.5 block text-[13px] font-medium leading-[18px] text-[#46514B]">
                     Kategori
-                    <span
-                      class="text-[#C0392B]"
-                      aria-hidden="true"
-                    >
-                      *
-                    </span>
+                    <span class="text-[#C0392B]" aria-hidden="true">*</span>
                   </span>
-
                   <select
                     v-model="categoryId"
                     required
-                    :disabled="isLoadingCategories"
-                    class="min-h-10 w-full rounded-md border border-[#D6DDD9] bg-white px-3 text-[14px] leading-5 text-[#17201C] outline-none transition focus:border-[#176B4D] focus:ring-2 focus:ring-[#176B4D] focus:ring-offset-2 disabled:cursor-not-allowed disabled:bg-[#F1F4F2] disabled:text-[#6B756F]"
+                    class="min-h-10 w-full rounded-md border border-[#D6DDD9] bg-white px-3 text-[14px] leading-5 text-[#17201C] outline-none transition focus:border-[#176B4D] focus:ring-2 focus:ring-[#176B4D] focus:ring-offset-2"
                   >
-                    <option value="">
-                      {{
-                        isLoadingCategories
-                          ? 'Memuat kategori...'
-                          : 'Pilih kategori'
-                      }}
-                    </option>
-
-                    <option
-                      v-for="category in categories"
-                      :key="category.id"
-                      :value="category.id"
-                    >
-                      {{ category.name }}
-                      {{ !category.is_active ? ' (Inactive)' : '' }}
+                    <option value="" disabled>Pilih kategori</option>
+                    <option v-for="category in selectableCategories" :key="category.id" :value="category.id">
+                      {{ category.name }}{{ category.isActive ? '' : ' (nonaktif)' }}
                     </option>
                   </select>
-
-                  <span
-                    class="mt-1 block text-[12px] leading-4 text-[#6B756F]"
-                  >
-                    Produk baru hanya dapat menggunakan kategori Active.
+                  <span v-if="categories.length === 0" class="mt-1 block text-[12px] leading-4 text-[#9A650F]">
+                    Belum ada kategori. Tambahkan di menu Kategori.
                   </span>
                 </label>
 
@@ -567,24 +502,26 @@ onMounted(loadCategories)
                   Inventory
                 </h2>
                 <p class="mt-1 text-[13px] leading-[18px] text-[#6B756F]">
-                  Atur stok awal dan batas minimum stok produk.
+                  {{ isEdit ? 'Stok hanya berubah lewat transaksi, Stock Adjustment, atau Stock Opname (tercatat di kartu stok).' : 'Atur stok awal dan batas minimum stok produk. Stok awal tercatat sebagai stock movement.' }}
                 </p>
               </div>
 
               <div class="grid gap-5 p-5 sm:grid-cols-2 sm:p-6">
                 <label class="block">
                   <span class="mb-1.5 block text-[13px] font-medium leading-[18px] text-[#46514B]">
-                    Stok
-                    <span class="text-[#C0392B]" aria-hidden="true">*</span>
+                    {{ isEdit ? 'Stok saat ini' : 'Stok awal' }}
+                    <span v-if="!isEdit" class="text-[#C0392B]" aria-hidden="true">*</span>
                   </span>
                   <input
                     v-model.number="stock"
-                    required
+                    :required="!isEdit"
+                    :disabled="isEdit"
+                    :title="isEdit ? 'Ubah stok melalui Stock Adjustment atau Stock Opname' : undefined"
                     min="0"
                     type="number"
                     step="1"
                     inputmode="numeric"
-                    class="min-h-10 w-full rounded-md border border-[#D6DDD9] bg-white px-3 text-right text-[14px] leading-5 text-[#17201C] outline-none transition focus:border-[#176B4D] focus:ring-2 focus:ring-[#176B4D] focus:ring-offset-2"
+                    class="disabled:bg-[#F1F4F2] disabled:text-[#6B756F] "min-h-10 w-full rounded-md border border-[#D6DDD9] bg-white px-3 text-right text-[14px] leading-5 text-[#17201C] outline-none transition focus:border-[#176B4D] focus:ring-2 focus:ring-[#176B4D] focus:ring-offset-2"
                   >
                 </label>
 

@@ -1,191 +1,174 @@
-from datetime import datetime, timezone
+from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from pydantic import BaseModel, Field
 
-from app.core.permissions import require_role
+from app.core.deps import ADMIN, STAFF, client_ip, require_role
+from app.core.utils import parse_object_id, search_regex, utc_now
+from app.models.audit_log import AuditAction, AuditModule
 from app.models.category import Category
 from app.models.product import Product
-from app.models.user import User, UserRole
-from app.schemas.category import (
-    CategoryCreate,
-    CategoryResponse,
-    CategoryStatusUpdate,
-    CategoryUpdate,
-)
+from app.models.user import User
+from app.services.audit import log_audit
+
 
 router = APIRouter(prefix="/api/categories", tags=["Categories"])
 
-admin_required = require_role(UserRole.ADMIN)
-admin_pengurus = require_role(UserRole.ADMIN, UserRole.PENGURUS)
+
+class CategoryRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    description: str | None = Field(default=None, max_length=500)
+    isActive: bool = True
 
 
-def to_response(category: Category) -> CategoryResponse:
+class CategoryResponse(BaseModel):
+    id: str
+    name: str
+    description: str | None
+    isActive: bool
+    productCount: int = 0
+    createdAt: datetime
+    updatedAt: datetime
+
+
+def to_response(category: Category, product_count: int = 0) -> CategoryResponse:
     return CategoryResponse(
         id=str(category.id),
         name=category.name,
         description=category.description,
-        is_active=category.is_active,
-        created_at=category.created_at,
-        updated_at=category.updated_at,
+        isActive=category.isActive,
+        productCount=product_count,
+        createdAt=category.createdAt,
+        updatedAt=category.updatedAt,
     )
 
 
+async def get_category_or_404(category_id: str) -> Category:
+    category = await Category.get(parse_object_id(category_id, "ID kategori"))
+    if category is None:
+        raise HTTPException(status_code=404, detail="Kategori tidak ditemukan.")
+    return category
+
+
+async def ensure_unique_name(name: str, exclude_id=None) -> None:
+    query: dict = {"name": {"$regex": f"^{search_regex(name)['$regex']}$", "$options": "i"}}
+    if exclude_id is not None:
+        query["_id"] = {"$ne": exclude_id}
+    if await Category.find_one(query):
+        raise HTTPException(status_code=409, detail="Nama kategori sudah digunakan.")
+
+
+async def product_counts() -> dict[str, int]:
+    counts: dict[str, int] = {}
+    async for doc in Product.get_pymongo_collection().find(
+        {"isActive": True}, {"categoryId": 1}
+    ):
+        key = doc.get("categoryId")
+        if key:
+            counts[key] = counts.get(key, 0) + 1
+    return counts
+
+
 @router.get("", response_model=list[CategoryResponse])
-async def get_categories(
-    is_active: bool | None = Query(default=None),
-    current_user: User = Depends(admin_pengurus),
+async def list_categories(
+    search: str | None = Query(default=None),
+    is_active: bool | None = Query(default=None, alias="isActive"),
+    current_user: User = Depends(require_role(*STAFF)),
 ):
-    filters = {}
-
+    query: dict = {}
+    if search and search.strip():
+        query["name"] = search_regex(search)
     if is_active is not None:
-        filters["is_active"] = is_active
+        query["isActive"] = is_active
 
-    categories = await Category.find(filters).sort("+name").to_list()
-
-    return [to_response(category) for category in categories]
+    categories = await Category.find(query).sort("name").to_list()
+    counts = await product_counts()
+    return [to_response(c, counts.get(str(c.id), 0)) for c in categories]
 
 
 @router.get("/{category_id}", response_model=CategoryResponse)
 async def get_category(
     category_id: str,
-    current_user: User = Depends(admin_pengurus),
+    current_user: User = Depends(require_role(*STAFF)),
 ):
-    category = await Category.get(category_id)
-
-    if not category:
-        raise HTTPException(
-            status_code=404,
-            detail="Category tidak ditemukan.",
-        )
-
-    return to_response(category)
+    category = await get_category_or_404(category_id)
+    count = await Product.find({"categoryId": category_id, "isActive": True}).count()
+    return to_response(category, count)
 
 
-@router.post(
-    "",
-    response_model=CategoryResponse,
-    status_code=201,
-)
+@router.post("", response_model=CategoryResponse, status_code=status.HTTP_201_CREATED)
 async def create_category(
-    payload: CategoryCreate,
-    current_user: User = Depends(admin_required),
+    payload: CategoryRequest,
+    request: Request,
+    current_user: User = Depends(require_role(*ADMIN)),
 ):
-    existing = await Category.find_one(
-        {"name": payload.name.strip()}
-    )
-
-    if existing:
-        raise HTTPException(
-            status_code=409,
-            detail="Category dengan nama tersebut sudah ada.",
-        )
-
-    now = datetime.now(timezone.utc)
+    name = payload.name.strip()
+    await ensure_unique_name(name)
 
     category = Category(
-        name=payload.name.strip(),
+        name=name,
         description=payload.description,
-        is_active=True,
-        created_at=now,
-        updated_at=now,
+        isActive=payload.isActive,
     )
-
     await category.insert()
 
+    await log_audit(
+        action=AuditAction.CREATE,
+        module=AuditModule.CATEGORY,
+        description=f"Membuat kategori {category.name}",
+        user=current_user,
+        reference_id=str(category.id),
+        ip_address=client_ip(request),
+    )
     return to_response(category)
 
 
-@router.put(
-    "/{category_id}",
-    response_model=CategoryResponse,
-)
+@router.put("/{category_id}", response_model=CategoryResponse)
 async def update_category(
     category_id: str,
-    payload: CategoryUpdate,
-    current_user: User = Depends(admin_required),
+    payload: CategoryRequest,
+    request: Request,
+    current_user: User = Depends(require_role(*ADMIN)),
 ):
-    category = await Category.get(category_id)
+    category = await get_category_or_404(category_id)
+    name = payload.name.strip()
+    await ensure_unique_name(name, category.id)
 
-    if not category:
-        raise HTTPException(
-            status_code=404,
-            detail="Category tidak ditemukan.",
-        )
-
-    existing = await Category.find_one(
-        {
-            "name": payload.name.strip(),
-            "_id": {"$ne": category.id},
-        }
-    )
-
-    if existing:
-        raise HTTPException(
-            status_code=409,
-            detail="Category dengan nama tersebut sudah ada.",
-        )
-
-    category.name = payload.name.strip()
+    category.name = name
     category.description = payload.description
-    category.updated_at = datetime.now(timezone.utc)
-
+    category.isActive = payload.isActive
+    category.updatedAt = utc_now()
     await category.save()
 
-    return to_response(category)
-
-
-@router.patch(
-    "/{category_id}/status",
-    response_model=CategoryResponse,
-)
-async def update_category_status(
-    category_id: str,
-    payload: CategoryStatusUpdate,
-    current_user: User = Depends(admin_required),
-):
-    category = await Category.get(category_id)
-
-    if not category:
-        raise HTTPException(
-            status_code=404,
-            detail="Category tidak ditemukan.",
-        )
-
-    category.is_active = payload.is_active
-    category.updated_at = datetime.now(timezone.utc)
-
-    await category.save()
-
-    return to_response(category)
-
-
-@router.delete("/{category_id}")
-async def delete_category(
-    category_id: str,
-    current_user: User = Depends(admin_required),
-):
-    category = await Category.get(category_id)
-
-    if not category:
-        raise HTTPException(
-            status_code=404,
-            detail="Category tidak ditemukan.",
-        )
-
-    product_exists = await Product.find_one(
-        {"category_id": str(category.id)}
+    await log_audit(
+        action=AuditAction.UPDATE,
+        module=AuditModule.CATEGORY,
+        description=f"Mengubah kategori {category.name}",
+        user=current_user,
+        reference_id=str(category.id),
+        ip_address=client_ip(request),
     )
+    return to_response(category)
 
-    if product_exists:
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                "Category sudah digunakan oleh Product "
-                "dan tidak dapat dihapus. "
-                "Nonaktifkan Category sebagai gantinya."
-            ),
-        )
 
-    await category.delete()
+@router.delete("/{category_id}", response_model=CategoryResponse)
+async def deactivate_category(
+    category_id: str,
+    request: Request,
+    current_user: User = Depends(require_role(*ADMIN)),
+):
+    """Kategori dinonaktifkan (bukan dihapus) karena direferensikan produk."""
+    category = await get_category_or_404(category_id)
+    category.isActive = False
+    category.updatedAt = utc_now()
+    await category.save()
 
-    return {"message": "Category berhasil dihapus."}
+    await log_audit(
+        action=AuditAction.DELETE,
+        module=AuditModule.CATEGORY,
+        description=f"Menonaktifkan kategori {category.name}",
+        user=current_user,
+        reference_id=str(category.id),
+        ip_address=client_ip(request),
+    )
+    return to_response(category)

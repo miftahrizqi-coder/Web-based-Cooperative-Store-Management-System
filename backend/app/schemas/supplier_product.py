@@ -20,6 +20,7 @@ class SupplierProductUpdateRequest(BaseModel):
     minimumOrder: int = Field(ge=1)
     leadTimeDays: int = Field(ge=0)
     isPreferred: bool = False
+    isActive: bool | None = None
 
 
 class SupplierProductStatusRequest(BaseModel):
@@ -29,7 +30,10 @@ class SupplierProductStatusRequest(BaseModel):
 class SupplierProductResponse(BaseModel):
     id: str
     supplierId: str
+    supplierName: str | None = None
     productId: str
+    productName: str | None = None
+    productSku: str | None = None
     supplierSku: str
     purchasePrice: float
     minimumOrder: int

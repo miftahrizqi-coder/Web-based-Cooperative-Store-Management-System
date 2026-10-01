@@ -1,70 +1,108 @@
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class InventoryResponse(BaseModel):
-    product_id: str
+    productId: str
     sku: str
     barcode: str | None
     name: str
+    categoryId: str
+    categoryName: str | None = None
     unit: str
     stock: float
-    minimum_stock: float
-    stock_status: str
-    is_active: bool
+    minimumStock: float
+    stockStatus: str
+    purchasePrice: float
+    sellingPrice: float
+    stockValue: float
+    isActive: bool
+    updatedAt: datetime
 
 
 class StockMovementResponse(BaseModel):
     id: str
-    product_id: str
+    productId: str
     sku: str
-    product_name: str
+    productName: str
     type: str
     quantity: float
-    stock_before: float
-    stock_after: float
-    reference_type: str | None
-    reference_id: str | None
-    created_by: str
-    created_at: datetime
+    stockBefore: float
+    stockAfter: float
+    referenceType: str | None
+    referenceId: str | None
+    referenceNumber: str | None = None
+    reason: str | None = None
+    createdBy: str
+    createdByName: str | None = None
+    createdAt: datetime
 
 
 class StockAdjustmentRequest(BaseModel):
-    product_id: str
+    productId: str
+    # Bertanda: positif menambah, negatif mengurangi stok.
     quantity: float
     reason: str = Field(min_length=3, max_length=500)
+
+    @model_validator(mode="after")
+    def non_zero(self):
+        if self.quantity == 0:
+            raise ValueError("quantity adjustment tidak boleh 0")
+        return self
 
 
 class StockAdjustmentResponse(BaseModel):
-    product_id: str
+    productId: str
     quantity: float
-    stock_before: float
-    stock_after: float
+    stockBefore: float
+    stockAfter: float
     reason: str
-    movement_id: str
+    movementId: str
+
+
+class StockOpnameItemRequest(BaseModel):
+    productId: str
+    physicalStock: float = Field(ge=0)
+    # Sistem mencatat stok yang dilihat petugas saat menghitung; jika stok
+    # berubah sebelum disimpan (mis. ada penjualan), opname ditolak.
+    systemStock: float | None = None
+    reason: str | None = Field(default=None, max_length=500)
 
 
 class StockOpnameRequest(BaseModel):
-    product_id: str
-    physical_stock: float = Field(ge=0)
-    reason: str = Field(min_length=3, max_length=500)
+    items: list[StockOpnameItemRequest] = Field(min_length=1)
+    notes: str | None = Field(default=None, max_length=1000)
+
+
+class StockOpnameItemResponse(BaseModel):
+    productId: str
+    sku: str
+    name: str
+    systemStock: float
+    physicalStock: float
+    difference: float
+    reason: str | None
+    movementId: str | None
 
 
 class StockOpnameResponse(BaseModel):
-    product_id: str
-    system_stock: float
-    physical_stock: float
-    difference: float
-    reason: str
-    movement_id: str | None
-    audit_event_id: str
+    id: str
+    opnameNumber: str
+    items: list[StockOpnameItemResponse]
+    notes: str | None
+    totalItems: int
+    itemsWithDifference: int
+    createdBy: str
+    createdByName: str | None = None
+    createdAt: datetime
 
 
 class StockAlertResponse(BaseModel):
-    product_id: str
+    productId: str
     sku: str
     name: str
+    unit: str
     stock: float
-    minimum_stock: float
+    minimumStock: float
     status: str

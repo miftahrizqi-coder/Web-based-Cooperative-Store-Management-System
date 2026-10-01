@@ -2,7 +2,9 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
-import { getUser, updateUser } from '../../api/users'
+import { getUser, resetUserPassword, updateUser } from '../../api/users'
+import { getMembers } from '../../api/members'
+import type { Member } from '../../types/member'
 import type { UserRole } from '../../types/auth'
 import { useAuth } from '../../stores/auth'
 
@@ -23,6 +25,12 @@ const name = ref('')
 const email = ref('')
 const role = ref<UserRole>('kasir')
 const isActive = ref(true)
+const memberId = ref('')
+const members = ref<Member[]>([])
+const resetPasswordValue = ref('')
+const resetMessage = ref('')
+const resetError = ref('')
+const resetting = ref(false)
 
 /* Data terakhir yang tersimpan di server, dipakai untuk membandingkan perubahan */
 const original = ref<{
@@ -138,6 +146,12 @@ async function loadUser() {
     email.value = user.email
     role.value = user.role
     isActive.value = user.is_active
+    memberId.value = user.memberId ?? ''
+    try {
+      members.value = await getMembers()
+    } catch {
+      members.value = []
+    }
 
     original.value = {
       name: user.name.trim(),
@@ -167,6 +181,10 @@ function validateForm(): boolean {
     errors.value.email = 'Email wajib diisi.'
   } else if (!EMAIL_PATTERN.test(email.value.trim())) {
     errors.value.email = 'Format email tidak valid. Contoh: nama@koperasi.id'
+  }
+
+  if (role.value === 'anggota' && !memberId.value) {
+    errors.value.role = 'Pilih data anggota yang ditautkan ke akun ini.'
   }
 
   if (!role.value) {
@@ -275,6 +293,7 @@ async function saveChanges() {
       email: email.value.trim(),
       role: role.value,
       is_active: isActive.value,
+      memberId: role.value === 'anggota' ? memberId.value || null : null,
     })
 
     await router.push(USERS_ROUTE)
@@ -288,6 +307,26 @@ async function saveChanges() {
 }
 
 onMounted(loadUser)
+
+async function handleResetPassword() {
+  resetMessage.value = ''
+  resetError.value = ''
+  if (resetPasswordValue.value.length < 8) {
+    resetError.value = 'Password baru minimal 8 karakter.'
+    return
+  }
+  if (!window.confirm('Reset password pengguna ini? Pengguna harus login ulang dengan password baru.')) return
+  resetting.value = true
+  try {
+    await resetUserPassword(userId, resetPasswordValue.value)
+    resetPasswordValue.value = ''
+    resetMessage.value = 'Password berhasil direset. Sampaikan password baru secara aman kepada pengguna.'
+  } catch (error) {
+    resetError.value = error instanceof Error ? error.message : 'Gagal mereset password.'
+  } finally {
+    resetting.value = false
+  }
+}
 </script>
 
 <template>
@@ -518,6 +557,23 @@ onMounted(loadUser)
                 </p>
               </div>
 
+              <!-- Tautan data anggota (wajib untuk role anggota) -->
+              <div v-if="role === 'anggota'">
+                <label for="member" class="mb-1.5 block text-xs font-medium leading-4 text-[#46514B]">
+                  Data anggota <span class="text-[#C0392B]" aria-hidden="true">*</span>
+                </label>
+                <select
+                  id="member"
+                  v-model="memberId"
+                  class="h-10 w-full rounded-lg border border-[#D6DDD9] bg-white px-3 text-sm text-[#17201C] focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-[#176B4D] sm:max-w-md"
+                >
+                  <option value="" disabled>Pilih anggota</option>
+                  <option v-for="member in members" :key="member.id" :value="member.id">
+                    {{ member.memberNumber }} — {{ member.name }}
+                  </option>
+                </select>
+              </div>
+
               <!-- Status -->
               <div>
                 <p id="active-label" class="mb-1.5 text-xs font-medium leading-4 text-[#46514B]">
@@ -697,6 +753,35 @@ onMounted(loadUser)
         </div>
       </div>
     </form>
+
+    <!-- Reset password oleh admin (PRD §8) -->
+    <section class="mt-6 rounded-lg border border-[#D6DDD9] bg-white p-5 sm:p-6" aria-labelledby="reset-title">
+      <h2 id="reset-title" class="text-lg font-semibold text-[#17201C]">Reset password</h2>
+      <p class="mt-1 text-[13px] text-[#6B756F]">
+        Atur password baru untuk pengguna ini. Semua sesi login pengguna tersebut akan diakhiri.
+      </p>
+      <form class="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end" @submit.prevent="handleResetPassword">
+        <label class="block sm:w-72">
+          <span class="mb-1.5 block text-xs font-medium text-[#46514B]">Password baru (min. 8 karakter)</span>
+          <input
+            v-model="resetPasswordValue"
+            type="password"
+            minlength="8"
+            autocomplete="new-password"
+            class="h-10 w-full rounded-lg border border-[#D6DDD9] px-3 text-sm focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-[#176B4D]"
+          >
+        </label>
+        <button
+          type="submit"
+          :disabled="resetting || resetPasswordValue.length < 8"
+          class="h-10 rounded-lg border border-[#C0392B]/40 bg-white px-4 text-sm font-semibold text-[#C0392B] hover:bg-[#FDF0EE] disabled:opacity-50"
+        >
+          {{ resetting ? 'Mereset…' : 'Reset password' }}
+        </button>
+      </form>
+      <p v-if="resetMessage" class="mt-3 text-sm text-[#16834B]" role="status">{{ resetMessage }}</p>
+      <p v-if="resetError" class="mt-3 text-sm text-[#C0392B]" role="alert">{{ resetError }}</p>
+    </section>
 
     <!-- Confirmation dialog -->
     <div

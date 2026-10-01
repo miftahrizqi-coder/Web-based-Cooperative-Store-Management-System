@@ -396,7 +396,7 @@ onMounted(loadInvoice)
             <p
               class="mt-1 break-all font-medium text-[#17201C]"
             >
-              {{ invoice.supplierId }}
+              {{ invoice.supplierName || invoice.supplierId }}
             </p>
           </div>
 
@@ -508,7 +508,7 @@ onMounted(loadInvoice)
               <dd
                 class="font-medium tabular-nums text-[#17201C]"
               >
-                {{ formatCurrency(invoice.shipping) }}
+                {{ formatCurrency(invoice.shippingCost) }}
               </dd>
             </div>
 

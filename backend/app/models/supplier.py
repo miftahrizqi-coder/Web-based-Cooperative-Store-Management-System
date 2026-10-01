@@ -60,8 +60,8 @@ class Supplier(Document):
     class Settings:
         name = "suppliers"
 
+        # supplierCode: index unik dibuat di core/database.py
         indexes = [
-            "supplierCode",
             "name",
             "status",
             "email",

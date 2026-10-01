@@ -42,8 +42,8 @@ const paymentMethods: Array<{
     label: 'Transfer Bank',
   },
   {
-    value: 'GIRO',
-    label: 'Giro',
+    value: 'DEBIT',
+    label: 'Debit',
   },
   {
     value: 'OTHER',
@@ -673,7 +673,7 @@ onMounted(loadPayables)
                     <dd
                       class="mt-1 break-all text-sm font-medium text-[#17201C]"
                     >
-                      {{ selectedPayable.supplierId }}
+                      {{ selectedPayable.supplierName || selectedPayable.supplierId }}
                     </dd>
                   </div>
 
@@ -1037,7 +1037,7 @@ onMounted(loadPayables)
                   <p
                     class="mt-1 break-all font-medium text-[#17201C]"
                   >
-                    {{ selectedPayable.supplierId }}
+                    {{ selectedPayable.supplierName || selectedPayable.supplierId }}
                   </p>
                 </div>
 

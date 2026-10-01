@@ -3,8 +3,9 @@ import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuth } from '../stores/auth'
 import { getNavigationItems } from '../router/navigation'
+import { ROLE_LABELS } from '../types/auth'
 
-const { currentUser, clearAuth } = useAuth()
+const { currentUser, logout } = useAuth()
 const router = useRouter()
 
 const isSidebarOpen = ref(false)
@@ -33,12 +34,12 @@ const navigationGroups = [
   {
     label: 'Master Data',
     matches: (path: string) =>
-      /^\/(products|categories|suppliers|members)(\/|$)/.test(path),
+      /^\/(products|categories|suppliers|supplier-products|members)(\/|$)/.test(path),
   },
   {
     label: 'Procurement',
     matches: (path: string) =>
-      /^\/(purchase-orders|goods-receipts|purchases|supplier-invoices|supplier-payments|supplier-debt)(\/|$)/.test(path),
+      /^\/(purchase-orders|goods-receipts|purchases|supplier-invoices|supplier-payments|supplier-payables|activities)(\/|$)/.test(path),
   },
   {
     label: 'Inventory',
@@ -100,15 +101,7 @@ const currentRoleLabel = computed(() => {
     return ''
   }
 
-  const labels: Record<string, string> = {
-    ADMIN: 'Admin',
-    ADMINISTRATOR: 'Admin',
-    KASIR: 'Kasir',
-    PENGURUS: 'Pengurus',
-    ANGGOTA: 'Anggota',
-  }
-
-  return labels[role] ?? role
+  return ROLE_LABELS[role] ?? role
 })
 
 const userInitial = computed(() => {
@@ -121,10 +114,10 @@ const userInitial = computed(() => {
   return source.trim().charAt(0).toUpperCase()
 })
 
-function handleLogout() {
+async function handleLogout() {
   isSidebarOpen.value = false
-  clearAuth()
-  router.push('/login')
+  await logout()
+  await router.push('/login')
 }
 
 function closeSidebar() {

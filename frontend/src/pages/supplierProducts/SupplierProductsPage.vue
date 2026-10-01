@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 
 import {
   getSupplierProducts,
@@ -14,6 +14,9 @@ import type { Product } from '../../types/product'
 import type { Supplier } from '../../types/supplier'
 
 const router = useRouter()
+const route = useRoute()
+// Dipakai rute /suppliers/:id/products (PRD §36).
+const supplierFilter = ref(typeof route.query.supplierId === 'string' ? route.query.supplierId : '')
 
 const items = ref<SupplierProduct[]>([])
 const products = ref<Product[]>([])
@@ -49,12 +52,14 @@ const filteredItems = computed(() => {
       product?.name.toLowerCase().includes(keyword) ||
       supplier?.name.toLowerCase().includes(keyword)
 
+    const matchesSupplier = !supplierFilter.value || item.supplierId === supplierFilter.value
+
     const matchesStatus =
       statusFilter.value === 'all' ||
       (statusFilter.value === 'active' && item.isActive) ||
       (statusFilter.value === 'inactive' && !item.isActive)
 
-    return matchesSearch && matchesStatus
+    return matchesSearch && matchesStatus && matchesSupplier
   })
 })
 
@@ -67,7 +72,7 @@ function formatRupiah(value: number) {
 }
 
 function productName(id: string) {
-  return productMap.value.get(id)?.name ?? 'Produk tidak ditemukan'
+  return productMap.value.get(id)?.name ?? items.value.find((i) => i.productId === id)?.productName ?? 'Produk tidak ditemukan'
 }
 
 function supplierName(id: string) {
@@ -222,6 +227,21 @@ onMounted(loadData)
               <option value="all">Semua</option>
               <option value="active">Aktif</option>
               <option value="inactive">Nonaktif</option>
+            </select>
+          </label>
+
+          <label class="block">
+            <span class="mb-1.5 block text-sm font-medium text-[#46514B]">
+              Supplier
+            </span>
+            <select
+              v-model="supplierFilter"
+              class="w-full rounded-lg border border-[#D6DDD9] bg-white px-3 py-2.5 text-sm text-[#17201C] outline-none focus:border-[#176B4D] focus:ring-2 focus:ring-[#176B4D]/15"
+            >
+              <option value="">Semua supplier</option>
+              <option v-for="supplier in suppliers" :key="supplier.id" :value="supplier.id">
+                {{ supplier.name }}
+              </option>
             </select>
           </label>
         </div>

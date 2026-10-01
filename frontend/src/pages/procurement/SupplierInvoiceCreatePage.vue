@@ -575,7 +575,7 @@ onMounted(loadData)
                     <dd
                       class="mt-1 break-all font-medium text-[#17201C]"
                     >
-                      {{ selectedPurchase.supplierId }}
+                      {{ selectedPurchase.supplierName || selectedPurchase.supplierId }}
                     </dd>
                   </div>
 

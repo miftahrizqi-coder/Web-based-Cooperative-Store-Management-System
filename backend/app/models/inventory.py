@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 from enum import Enum
 
 from beanie import Document
-from pydantic import Field
+from pydantic import BaseModel, Field
 
 
 class StockMovementType(str, Enum):
@@ -15,6 +15,12 @@ class StockMovementType(str, Enum):
 
 
 class StockMovement(Document):
+    """
+    Kartu stok. `quantity` bertanda (PRD §20):
+    positif = stok masuk, negatif = stok keluar.
+    stockAfter = stockBefore + quantity.
+    """
+
     productId: str
     type: StockMovementType
     quantity: float
@@ -22,40 +28,38 @@ class StockMovement(Document):
     stockAfter: float
     referenceType: str | None = None
     referenceId: str | None = None
+    referenceNumber: str | None = None
+    reason: str | None = None
     createdBy: str
-    createdAt: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc)
-    )
+    createdAt: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     class Settings:
         name = "stock_movements"
-        indexes = [
-            "productId",
-            "type",
-            "referenceType",
-            "createdAt",
-        ]
+        indexes = ["productId", "type", "referenceType", "referenceId", "createdAt"]
 
 
-class InventoryAuditEvent(Document):
-    action: str
+class StockOpnameItem(BaseModel):
     productId: str
-    referenceType: str | None = None
-    referenceId: str | None = None
-    stockBefore: float
-    stockAfter: float
-    quantity: float
+    sku: str
+    name: str
+    systemStock: float
+    physicalStock: float = Field(ge=0)
+    difference: float
     reason: str | None = None
+    movementId: str | None = None
+
+
+class StockOpname(Document):
+    """Collection `stock_opnames` (PRD §21)."""
+
+    opnameNumber: str
+    items: list[StockOpnameItem]
+    notes: str | None = None
+    totalItems: int
+    itemsWithDifference: int
     createdBy: str
-    createdAt: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc)
-    )
+    createdAt: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     class Settings:
-        name = "inventory_audit_events"
-        indexes = [
-            "productId",
-            "action",
-            "referenceType",
-            "createdAt",
-        ]
+        name = "stock_opnames"
+        indexes = ["createdAt", "createdBy"]

@@ -13,6 +13,7 @@ import type {
 } from '../../types/supplier'
 
 import { useAuth } from '../../stores/auth'
+import SupplierHistory from '../../components/suppliers/SupplierHistory.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -301,53 +302,8 @@ onMounted(loadSupplier)
         </p>
       </section>
 
-      <!-- Riwayat -->
-      <section class="rounded-xl border border-[#D6DDD9] bg-white">
-        <div class="border-b border-[#D6DDD9] px-5 py-4 sm:px-6">
-          <h2 class="text-base font-semibold text-[#17201C]">Riwayat Supplier</h2>
-          <p class="mt-1 text-sm text-[#6B756F]">Modul terkait yang akan menampilkan aktivitas supplier.</p>
-        </div>
-        <div class="grid gap-0 sm:grid-cols-2 lg:grid-cols-3">
-          <div class="border-b border-[#D6DDD9] p-5 sm:border-r">
-            <h3 class="text-sm font-semibold text-[#17201C]">Produk yang Disuplai</h3>
-            <p class="mt-1 text-sm text-[#6B756F]">Belum tersedia.</p>
-          </div>
-          <div class="border-b border-[#D6DDD9] p-5 lg:border-r">
-            <h3 class="text-sm font-semibold text-[#17201C]">Riwayat PO</h3>
-            <p class="mt-1 text-sm text-[#6B756F]">Akan terhubung dengan modul Procurement.</p>
-          </div>
-          <div class="border-b border-[#D6DDD9] p-5 sm:border-r lg:border-r-0">
-            <h3 class="text-sm font-semibold text-[#17201C]">Riwayat Penerimaan</h3>
-            <p class="mt-1 text-sm text-[#6B756F]">Akan terhubung dengan Goods Receipt.</p>
-          </div>
-          <div class="border-b border-[#D6DDD9] p-5 lg:border-b-0 lg:border-r">
-            <h3 class="text-sm font-semibold text-[#17201C]">Riwayat Pembelian</h3>
-            <p class="mt-1 text-sm text-[#6B756F]">Akan terhubung dengan Purchase.</p>
-          </div>
-          <div class="border-b border-[#D6DDD9] p-5 sm:border-r sm:border-b-0">
-            <h3 class="text-sm font-semibold text-[#17201C]">Riwayat Invoice</h3>
-            <p class="mt-1 text-sm text-[#6B756F]">Akan terhubung dengan Supplier Invoice.</p>
-          </div>
-          <div class="p-5">
-            <h3 class="text-sm font-semibold text-[#17201C]">Riwayat Pembayaran</h3>
-            <p class="mt-1 text-sm text-[#6B756F]">Akan terhubung dengan Supplier Payment.</p>
-          </div>
-        </div>
-      </section>
-
-      <!-- Hutang -->
-      <section class="rounded-xl border border-[#D6DDD9] bg-white">
-        <div class="border-b border-[#D6DDD9] px-5 py-4 sm:px-6">
-          <h2 class="text-base font-semibold text-[#17201C]">Informasi Hutang</h2>
-        </div>
-        <div class="px-5 py-6 sm:px-6">
-          <div class="rounded-lg border border-dashed border-[#D6DDD9] bg-[#F8FAF9] p-5 text-center">
-            <p class="text-sm text-[#6B756F]">
-              Informasi hutang supplier akan tersedia setelah modul invoice dan pembayaran terhubung.
-            </p>
-          </div>
-        </div>
-      </section>
+      <!-- Riwayat & hutang supplier -->
+      <SupplierHistory :supplier-id="supplier.id" />
 
       <!-- Metadata -->
       <section class="border-t border-[#D6DDD9] pt-4">

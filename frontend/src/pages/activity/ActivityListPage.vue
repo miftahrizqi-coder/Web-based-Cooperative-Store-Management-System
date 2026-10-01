@@ -48,6 +48,9 @@ const activityLabels: Record<ActivityType, string> = {
   SUBMITTED: 'Diajukan',
   APPROVED: 'Disetujui',
   ORDERED: 'Dipesan',
+  RECEIVED: 'Diterima',
+  COMPLETED: 'Selesai',
+  PAID: 'Dibayar',
   CANCELLED: 'Dibatalkan',
 }
 

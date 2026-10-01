@@ -1,17 +1,42 @@
+export type StockStatus = 'AVAILABLE' | 'LOW_STOCK' | 'OUT_OF_STOCK'
+
 export interface Product {
   id: string
   sku: string
   barcode: string | null
   name: string
-  category_id: string
+  categoryId: string
+  categoryName: string | null
   unit: string
-  purchase_price: number
-  selling_price: number
+  /** null untuk kasir (harga beli disembunyikan). */
+  purchasePrice: number | null
+  sellingPrice: number
   stock: number
-  minimum_stock: number
-  is_active: boolean
-  created_at: string
-  updated_at: string
+  minimumStock: number
+  stockStatus: StockStatus
+  isActive: boolean
+  createdAt: string
+  updatedAt: string
 }
 
 export type ProductStockStatus = 'all' | 'available' | 'low' | 'out'
+
+export interface ProductPayload {
+  sku: string
+  barcode: string | null
+  name: string
+  categoryId: string
+  unit: string
+  purchasePrice: number
+  sellingPrice: number
+  minimumStock: number
+}
+
+export interface ProductCreatePayload extends ProductPayload {
+  /** Stok awal, dicatat sebagai stock movement. */
+  stock: number
+}
+
+export interface ProductUpdatePayload extends ProductPayload {
+  isActive: boolean
+}

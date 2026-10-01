@@ -2,10 +2,11 @@
 import { ref } from 'vue'
 import { login, getCurrentUser } from '../../api/auth'
 import { useAuth } from '../../stores/auth'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { getLandingPage } from '../../router/navigation'
 
 const router = useRouter()
+const route = useRoute()
 
 const username = ref('')
 const password = ref('')
@@ -52,9 +53,17 @@ async function handleSubmit() {
     const user = await getCurrentUser(result.token)
 
     setAuth(result.token, user)
-    await router.push(getLandingPage(user.role))
-  } catch {
-    errorMessage.value = 'Username atau password tidak valid.'
+
+    const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : ''
+    // Hanya path internal yang diizinkan (hindari open redirect).
+    const target = redirect.startsWith('/') && !redirect.startsWith('//') ? redirect : getLandingPage(user.role)
+    await router.push(target)
+  } catch (error) {
+    // Tampilkan pesan server (akun nonaktif, rate limit, dll.).
+    errorMessage.value =
+      error instanceof Error && error.message
+        ? error.message
+        : 'Username atau password tidak valid.'
   } finally {
     isLoading.value = false
   }

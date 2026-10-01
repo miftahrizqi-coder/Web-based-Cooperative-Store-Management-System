@@ -1,7 +1,10 @@
 export interface SupplierProduct {
   id: string
   supplierId: string
+  supplierName?: string | null
   productId: string
+  productName?: string | null
+  productSku?: string | null
   supplierSku: string
   purchasePrice: number
   minimumOrder: number

@@ -226,7 +226,7 @@ onMounted(loadPurchase)
                   Supplier
                 </dt>
                 <dd class="mt-1 break-all text-sm font-medium text-[#17201C]">
-                  {{ purchase.supplierId }}
+                  {{ purchase.supplierName || purchase.supplierId }}
                 </dd>
               </div>
 

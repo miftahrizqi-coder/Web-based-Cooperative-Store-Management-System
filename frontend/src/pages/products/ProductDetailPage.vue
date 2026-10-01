@@ -16,7 +16,7 @@ const errorMessage = ref('')
 const productStatus = computed(() => {
   if (!product.value) return null
 
-  return product.value.is_active
+  return product.value.isActive
     ? {
         label: 'Aktif',
         class: 'border-[#B9DEC9] bg-[#F0F8F5] text-[#16834B]',
@@ -31,7 +31,7 @@ const stockStatus = computed(() => {
   if (!product.value) return null
 
   const stock = Number(product.value.stock)
-  const minimum = Number(product.value.minimum_stock)
+  const minimum = Number(product.value.minimumStock)
 
   if (stock <= 0) {
     return {
@@ -225,6 +225,14 @@ onMounted(loadProduct)
 
               <button
                 type="button"
+                class="inline-flex min-h-10 items-center justify-center rounded-md border border-[#D6DDD9] bg-white px-4 text-[14px] font-medium text-[#46514B] transition hover:bg-[#F1F4F2] focus:outline-none focus:ring-2 focus:ring-[#176B4D] focus:ring-offset-2"
+                @click="router.push({ path: '/inventory/movements', query: { productId: product.id } })"
+              >
+                Kartu Stok
+              </button>
+
+              <button
+                type="button"
                 class="inline-flex min-h-10 items-center justify-center rounded-md bg-[#176B4D] px-4 text-[14px] font-semibold text-white transition hover:bg-[#1F805D] focus:outline-none focus:ring-2 focus:ring-[#176B4D] focus:ring-offset-2"
                 @click="goToEdit"
               >
@@ -255,7 +263,7 @@ onMounted(loadProduct)
             <article class="rounded-lg border border-[#D6DDD9] bg-white p-5">
               <p class="text-[13px] leading-[18px] text-[#6B756F]">Harga jual</p>
               <p class="mt-2 text-[24px] font-semibold leading-8 text-[#17201C]">
-                {{ formatCurrency(product.selling_price) }}
+                {{ formatCurrency(product.sellingPrice) }}
               </p>
               <p class="mt-1 text-[12px] leading-4 text-[#6B756F]">
                 Harga yang digunakan pada penjualan.
@@ -284,7 +292,7 @@ onMounted(loadProduct)
             <article class="rounded-lg border border-[#D6DDD9] bg-white p-5">
               <p class="text-[13px] leading-[18px] text-[#6B756F]">Minimum stok</p>
               <p class="mt-2 text-[24px] font-semibold leading-8 text-[#17201C]">
-                {{ product.minimum_stock }}
+                {{ product.minimumStock }}
               </p>
               <p class="mt-1 text-[12px] leading-4 text-[#6B756F]">
                 Batas minimum sebelum stok perlu diperhatikan.
@@ -332,7 +340,7 @@ onMounted(loadProduct)
             <div class="grid gap-1 px-5 py-4 sm:grid-cols-[180px_minmax(0,1fr)] sm:gap-6 sm:px-6">
               <dt class="text-[13px] leading-[18px] text-[#6B756F]">Kategori</dt>
               <dd class="text-[14px] font-medium leading-5 text-[#17201C]">
-                {{ product.category_id }}
+                {{ product.categoryName || product.categoryId }}
               </dd>
             </div>
 
@@ -366,14 +374,14 @@ onMounted(loadProduct)
             <div class="grid gap-1 px-5 py-4 sm:grid-cols-[180px_minmax(0,1fr)] sm:gap-6 sm:px-6">
               <dt class="text-[13px] leading-[18px] text-[#6B756F]">Harga beli</dt>
               <dd class="text-right text-[14px] font-semibold leading-5 text-[#17201C] sm:text-left">
-                {{ formatCurrency(product.purchase_price) }}
+                {{ formatCurrency(product.purchasePrice ?? 0) }}
               </dd>
             </div>
 
             <div class="grid gap-1 px-5 py-4 sm:grid-cols-[180px_minmax(0,1fr)] sm:gap-6 sm:px-6">
               <dt class="text-[13px] leading-[18px] text-[#6B756F]">Harga jual</dt>
               <dd class="text-right text-[14px] font-semibold leading-5 text-[#17201C] sm:text-left">
-                {{ formatCurrency(product.selling_price) }}
+                {{ formatCurrency(product.sellingPrice) }}
               </dd>
             </div>
           </dl>
@@ -419,14 +427,14 @@ onMounted(loadProduct)
             <div class="px-5 py-4 sm:px-6">
               <dt class="text-[13px] leading-[18px] text-[#6B756F]">Minimum stok</dt>
               <dd class="mt-1 text-[16px] font-semibold leading-6 text-[#17201C]">
-                {{ product.minimum_stock }} {{ product.unit }}
+                {{ product.minimumStock }} {{ product.unit }}
               </dd>
             </div>
 
             <div class="px-5 py-4 sm:px-6">
               <dt class="text-[13px] leading-[18px] text-[#6B756F]">Status produk</dt>
               <dd class="mt-1 text-[16px] font-semibold leading-6 text-[#17201C]">
-                {{ product.is_active ? 'Dapat digunakan' : 'Tidak digunakan' }}
+                {{ product.isActive ? 'Dapat digunakan' : 'Tidak digunakan' }}
               </dd>
             </div>
           </dl>

@@ -480,7 +480,7 @@ onMounted(loadInvoices)
                 scope="col"
                 class="px-5 py-3.5 font-semibold text-[#46514B]"
               >
-                Purchase
+                Sisa hutang
               </th>
 
               <th
@@ -549,7 +549,7 @@ onMounted(loadInvoices)
                   class="block truncate"
                   :title="invoice.supplierId"
                 >
-                  {{ invoice.supplierId }}
+                  {{ invoice.supplierName || invoice.supplierId }}
                 </span>
               </td>
 
@@ -559,10 +559,10 @@ onMounted(loadInvoices)
                 <button
                   type="button"
                   class="max-w-full truncate font-mono text-xs text-[#46514B] underline-offset-2 hover:text-[#176B4D] hover:underline focus:outline-none focus:ring-2 focus:ring-[#176B4D]/30"
-                  :title="invoice.purchaseId"
+                  :title="`Sisa hutang: ${invoice.outstanding}`"
                   @click="openDetail(invoice.id)"
                 >
-                  {{ invoice.purchaseId }}
+                  {{ new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(invoice.outstanding ?? 0) }}
                 </button>
               </td>
 
@@ -696,7 +696,7 @@ onMounted(loadInvoices)
               class="mt-1 truncate text-sm font-medium text-[#17201C]"
               :title="invoice.supplierId"
             >
-              {{ invoice.supplierId }}
+              {{ invoice.supplierName || invoice.supplierId }}
             </dd>
           </div>
 
@@ -718,14 +718,14 @@ onMounted(loadInvoices)
             <dt
               class="text-xs text-[#6B756F]"
             >
-              Purchase
+              Sisa hutang
             </dt>
 
             <dd
               class="mt-1 truncate font-mono text-xs font-medium text-[#46514B]"
-              :title="invoice.purchaseId"
+              :title="`Sisa hutang: ${invoice.outstanding}`"
             >
-              {{ invoice.purchaseId }}
+              {{ new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(invoice.outstanding ?? 0) }}
             </dd>
           </div>
 

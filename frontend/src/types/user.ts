@@ -7,4 +7,8 @@ export interface User {
   name: string
   role: UserRole
   is_active: boolean
+  memberId: string | null
+  lastLoginAt: string | null
+  createdAt: string | null
+  updatedAt: string | null
 }

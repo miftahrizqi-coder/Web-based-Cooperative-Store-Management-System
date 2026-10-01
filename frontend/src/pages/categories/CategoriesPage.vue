@@ -1,458 +1,228 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, onMounted, reactive, ref } from 'vue'
+import { RouterLink } from 'vue-router'
 import {
-  deleteCategory,
+  createCategory,
+  deactivateCategory,
   getCategories,
-  updateCategoryStatus,
-  type Category,
+  updateCategory,
 } from '../../api/categories'
-import { useAuth } from '../../stores/auth'
-
-const router = useRouter()
-const { token } = useAuth()
+import { errorMessage } from '../../services/api'
+import type { Category } from '../../types/category'
 
 const categories = ref<Category[]>([])
 const isLoading = ref(true)
-const errorMessage = ref('')
+const loadError = ref('')
 const actionError = ref('')
-const actionLoadingId = ref<string | null>(null)
+const search = ref('')
+const statusFilter = ref<'all' | 'active' | 'inactive'>('all')
 
-const activeCount = computed(
-  () => categories.value.filter((category) => category.is_active).length,
-)
+const modalOpen = ref(false)
+const editing = ref<Category | null>(null)
+const saving = ref(false)
+const formError = ref('')
+const form = reactive({ name: '', description: '', isActive: true })
 
-const inactiveCount = computed(
-  () => categories.value.filter((category) => !category.is_active).length,
-)
+const filtered = computed(() => {
+  const term = search.value.trim().toLowerCase()
+  return categories.value.filter((category) => {
+    if (statusFilter.value === 'active' && !category.isActive) return false
+    if (statusFilter.value === 'inactive' && category.isActive) return false
+    if (!term) return true
+    return (
+      category.name.toLowerCase().includes(term) ||
+      (category.description ?? '').toLowerCase().includes(term)
+    )
+  })
+})
 
-const isEmpty = computed(
-  () =>
-    !isLoading.value &&
-    !errorMessage.value &&
-    categories.value.length === 0,
-)
-
-async function loadCategories() {
-  if (!token.value) {
-    errorMessage.value =
-      'Sesi login tidak ditemukan. Silakan login kembali.'
-    isLoading.value = false
-    return
-  }
-
+async function load() {
   isLoading.value = true
-  errorMessage.value = ''
-  actionError.value = ''
-
+  loadError.value = ''
   try {
-    categories.value = await getCategories(token.value)
+    categories.value = await getCategories()
   } catch (error) {
-    errorMessage.value =
-      error instanceof Error
-        ? error.message
-        : 'Gagal mengambil data Category.'
+    loadError.value = errorMessage(error, 'Gagal memuat kategori.')
   } finally {
     isLoading.value = false
   }
 }
 
-function goToCreate() {
-  router.push('/categories/create')
+function openCreate() {
+  editing.value = null
+  form.name = ''
+  form.description = ''
+  form.isActive = true
+  formError.value = ''
+  modalOpen.value = true
 }
 
-function goToEdit(categoryId: string) {
-  router.push(`/categories/${categoryId}/edit`)
+function openEdit(category: Category) {
+  editing.value = category
+  form.name = category.name
+  form.description = category.description ?? ''
+  form.isActive = category.isActive
+  formError.value = ''
+  modalOpen.value = true
 }
 
-async function handleToggleStatus(category: Category) {
-  if (!token.value || actionLoadingId.value) {
+async function save() {
+  if (!form.name.trim()) {
+    formError.value = 'Nama kategori wajib diisi.'
     return
   }
-
-  actionLoadingId.value = category.id
-  actionError.value = ''
-
+  saving.value = true
+  formError.value = ''
+  const payload = {
+    name: form.name.trim(),
+    description: form.description.trim() || null,
+    isActive: form.isActive,
+  }
   try {
-    const updatedCategory = await updateCategoryStatus(
-      token.value,
-      category.id,
-      !category.is_active,
-    )
-
-    const index = categories.value.findIndex(
-      (item) => item.id === category.id,
-    )
-
-    if (index !== -1) {
-      categories.value[index] = updatedCategory
+    if (editing.value) {
+      await updateCategory(editing.value.id, payload)
+    } else {
+      await createCategory(payload)
     }
+    modalOpen.value = false
+    await load()
   } catch (error) {
-    actionError.value =
-      error instanceof Error
-        ? error.message
-        : 'Gagal memperbarui status Category.'
+    formError.value = errorMessage(error, 'Gagal menyimpan kategori.')
   } finally {
-    actionLoadingId.value = null
+    saving.value = false
   }
 }
 
-async function handleDelete(category: Category) {
-  if (!token.value || actionLoadingId.value) {
-    return
-  }
-
-  const confirmed = window.confirm(
-    `Hapus Category "${category.name}"?`,
-  )
-
-  if (!confirmed) {
-    return
-  }
-
-  actionLoadingId.value = category.id
+async function deactivate(category: Category) {
+  if (!window.confirm(`Nonaktifkan kategori "${category.name}"? Produk yang sudah ada tetap memakai kategori ini.`)) return
   actionError.value = ''
-
   try {
-    await deleteCategory(token.value, category.id)
-
-    categories.value = categories.value.filter(
-      (item) => item.id !== category.id,
-    )
+    await deactivateCategory(category.id)
+    await load()
   } catch (error) {
-    actionError.value =
-      error instanceof Error
-        ? error.message
-        : 'Gagal menghapus Category.'
-  } finally {
-    actionLoadingId.value = null
+    actionError.value = errorMessage(error, 'Gagal menonaktifkan kategori.')
   }
 }
 
-function formatDate(value: string) {
-  return new Intl.DateTimeFormat('id-ID', {
-    dateStyle: 'medium',
-  }).format(new Date(value))
-}
-
-onMounted(loadCategories)
+onMounted(load)
 </script>
 
 <template>
-  <div class="space-y-6">
-    <!-- Header -->
-    <div
-      class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
-    >
-      <div>
-        <h1 class="text-2xl font-semibold text-[#26332D]">
-          Category
-        </h1>
-
-        <p class="mt-1 text-sm text-[#68736D]">
-          Kelola master kategori produk.
-        </p>
-      </div>
-
-      <button
-        type="button"
-        class="inline-flex min-h-10 items-center justify-center rounded-lg bg-[#26332D] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#34433B]"
-        @click="goToCreate"
-      >
-        + Tambah Category
-      </button>
-    </div>
-
-    <!-- Summary -->
-    <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
-      <div
-        class="rounded-xl border border-[#DCE3DF] bg-white p-4"
-      >
-        <p class="text-sm text-[#68736D]">
-          Total Category
-        </p>
-
-        <p class="mt-2 text-2xl font-semibold text-[#26332D]">
-          {{ categories.length }}
-        </p>
-      </div>
-
-      <div
-        class="rounded-xl border border-[#DCE3DF] bg-white p-4"
-      >
-        <p class="text-sm text-[#68736D]">
-          Active
-        </p>
-
-        <p class="mt-2 text-2xl font-semibold text-[#16834B]">
-          {{ activeCount }}
-        </p>
-      </div>
-
-      <div
-        class="rounded-xl border border-[#DCE3DF] bg-white p-4"
-      >
-        <p class="text-sm text-[#68736D]">
-          Inactive
-        </p>
-
-        <p class="mt-2 text-2xl font-semibold text-[#6B756F]">
-          {{ inactiveCount }}
-        </p>
-      </div>
-    </div>
-
-    <!-- Error -->
-    <div
-      v-if="errorMessage"
-      class="rounded-xl border border-[#E8B9B3] bg-[#FDF0EE] px-4 py-3 text-sm text-[#C0392B]"
-    >
-      <div
-        class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
-      >
-        <span>{{ errorMessage }}</span>
-
-        <button
-          type="button"
-          class="font-medium underline"
-          @click="loadCategories"
-        >
-          Coba lagi
-        </button>
-      </div>
-    </div>
-
-    <!-- Action Error -->
-    <div
-      v-if="actionError"
-      class="rounded-xl border border-[#E8B9B3] bg-[#FDF0EE] px-4 py-3 text-sm text-[#C0392B]"
-    >
-      {{ actionError }}
-    </div>
-
-    <!-- Loading -->
-    <div
-      v-if="isLoading"
-      class="rounded-xl border border-[#DCE3DF] bg-white p-8 text-center text-sm text-[#68736D]"
-    >
-      Memuat Category...
-    </div>
-
-    <!-- Empty -->
-    <div
-      v-else-if="isEmpty"
-      class="rounded-xl border border-dashed border-[#C8D1CC] bg-white p-10 text-center"
-    >
-      <h2 class="text-base font-semibold text-[#26332D]">
-        Belum ada Category
-      </h2>
-
-      <p class="mt-1 text-sm text-[#68736D]">
-        Tambahkan Category untuk mulai mengelompokkan produk.
-      </p>
-
-      <button
-        type="button"
-        class="mt-4 inline-flex min-h-10 items-center justify-center rounded-lg bg-[#26332D] px-4 py-2 text-sm font-medium text-white"
-        @click="goToCreate"
-      >
-        Tambah Category
-      </button>
-    </div>
-
-    <!-- Desktop -->
-    <div
-      v-else
-      class="hidden overflow-hidden rounded-xl border border-[#DCE3DF] bg-white md:block"
-    >
-      <div class="overflow-x-auto">
-        <table class="min-w-full text-sm">
-          <thead
-            class="border-b border-[#DCE3DF] bg-[#F7F9F8]"
-          >
-            <tr
-              class="text-left text-xs font-semibold uppercase tracking-wide text-[#68736D]"
-            >
-              <th class="px-5 py-3">
-                Nama
-              </th>
-
-              <th class="px-5 py-3">
-                Description
-              </th>
-
-              <th class="px-5 py-3">
-                Status
-              </th>
-
-              <th class="px-5 py-3">
-                Dibuat
-              </th>
-
-              <th class="px-5 py-3 text-right">
-                Action
-              </th>
-            </tr>
-          </thead>
-
-          <tbody class="divide-y divide-[#EDF1EE]">
-            <tr
-              v-for="category in categories"
-              :key="category.id"
-              class="hover:bg-[#FAFBFA]"
-            >
-              <td class="px-5 py-4">
-                <div class="font-medium text-[#26332D]">
-                  {{ category.name }}
-                </div>
-              </td>
-
-              <td class="max-w-md px-5 py-4 text-[#68736D]">
-                <span v-if="category.description">
-                  {{ category.description }}
-                </span>
-
-                <span
-                  v-else
-                  class="text-[#9AA39E]"
-                >
-                  —
-                </span>
-              </td>
-
-              <td class="px-5 py-4">
-                <span
-                  v-if="category.is_active"
-                  class="inline-flex rounded-full border border-[#B9DEC9] bg-[#F0F8F5] px-2.5 py-1 text-xs font-medium text-[#16834B]"
-                >
-                  Active
-                </span>
-
-                <span
-                  v-else
-                  class="inline-flex rounded-full border border-[#D6DDD9] bg-[#F1F4F2] px-2.5 py-1 text-xs font-medium text-[#6B756F]"
-                >
-                  Inactive
-                </span>
-              </td>
-
-              <td class="px-5 py-4 text-[#68736D]">
-                {{ formatDate(category.created_at) }}
-              </td>
-
-              <td class="px-5 py-4">
-                <div class="flex justify-end gap-2">
-                  <button
-                    type="button"
-                    class="rounded-lg border border-[#DCE3DF] px-3 py-2 text-xs font-medium text-[#46534C] hover:bg-[#F7F9F8]"
-                    @click="goToEdit(category.id)"
-                  >
-                    Edit
-                  </button>
-
-                  <button
-                    type="button"
-                    :disabled="actionLoadingId === category.id"
-                    class="rounded-lg border border-[#DCE3DF] px-3 py-2 text-xs font-medium text-[#46534C] hover:bg-[#F7F9F8] disabled:cursor-not-allowed disabled:opacity-50"
-                    @click="handleToggleStatus(category)"
-                  >
-                    {{
-                      actionLoadingId === category.id
-                        ? 'Memproses...'
-                        : category.is_active
-                          ? 'Nonaktifkan'
-                          : 'Aktifkan'
-                    }}
-                  </button>
-
-                  <button
-                    type="button"
-                    :disabled="actionLoadingId === category.id"
-                    class="rounded-lg border border-[#E8B9B3] px-3 py-2 text-xs font-medium text-[#C0392B] hover:bg-[#FDF0EE] disabled:cursor-not-allowed disabled:opacity-50"
-                    @click="handleDelete(category)"
-                  >
-                    Hapus
-                  </button>
-                </div>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-
-    <!-- Mobile -->
-    <div
-      v-if="!isLoading && !isEmpty"
-      class="space-y-3 md:hidden"
-    >
-      <div
-        v-for="category in categories"
-        :key="category.id"
-        class="rounded-xl border border-[#DCE3DF] bg-white p-4"
-      >
-        <div class="flex items-start justify-between gap-3">
-          <div class="min-w-0">
-            <h2 class="font-semibold text-[#26332D]">
-              {{ category.name }}
-            </h2>
-
-            <p class="mt-1 text-sm text-[#68736D]">
-              {{ category.description || 'Tidak ada description.' }}
-            </p>
-          </div>
-
-          <span
-            v-if="category.is_active"
-            class="shrink-0 rounded-full border border-[#B9DEC9] bg-[#F0F8F5] px-2.5 py-1 text-xs font-medium text-[#16834B]"
-          >
-            Active
-          </span>
-
-          <span
-            v-else
-            class="shrink-0 rounded-full border border-[#D6DDD9] bg-[#F1F4F2] px-2.5 py-1 text-xs font-medium text-[#6B756F]"
-          >
-            Inactive
-          </span>
+  <main class="page">
+    <div class="page-inner">
+      <header class="page-header">
+        <div>
+          <nav class="breadcrumb" aria-label="Breadcrumb">
+            <span>Master Data</span><span>/</span><span aria-current="page">Kategori</span>
+          </nav>
+          <h1 class="page-title">Kategori Produk</h1>
+          <p class="page-subtitle">Kelompokkan produk agar mudah dicari, difilter, dan dilaporkan.</p>
         </div>
-
-        <div class="mt-4 text-xs text-[#9AA39E]">
-          Dibuat {{ formatDate(category.created_at) }}
+        <div class="header-actions">
+          <button type="button" class="btn btn-primary" @click="openCreate">+ Tambah kategori</button>
         </div>
+      </header>
 
-        <div class="mt-4 grid grid-cols-3 gap-2">
-          <button
-            type="button"
-            class="min-h-10 rounded-lg border border-[#DCE3DF] px-2 text-xs font-medium text-[#46534C]"
-            @click="goToEdit(category.id)"
-          >
-            Edit
-          </button>
-
-          <button
-            type="button"
-            :disabled="actionLoadingId === category.id"
-            class="min-h-10 rounded-lg border border-[#DCE3DF] px-2 text-xs font-medium text-[#46534C] disabled:opacity-50"
-            @click="handleToggleStatus(category)"
-          >
-            {{
-              category.is_active
-                ? 'Nonaktifkan'
-                : 'Aktifkan'
-            }}
-          </button>
-
-          <button
-            type="button"
-            :disabled="actionLoadingId === category.id"
-            class="min-h-10 rounded-lg border border-[#E8B9B3] px-2 text-xs font-medium text-[#C0392B] disabled:opacity-50"
-            @click="handleDelete(category)"
-          >
-            Hapus
-          </button>
+      <section class="card card-body">
+        <div class="filter-bar">
+          <label class="field">
+            <span class="label">Cari</span>
+            <input v-model="search" type="search" class="input" placeholder="Nama atau deskripsi">
+          </label>
+          <label class="field">
+            <span class="label">Status</span>
+            <select v-model="statusFilter" class="select">
+              <option value="all">Semua</option>
+              <option value="active">Aktif</option>
+              <option value="inactive">Nonaktif</option>
+            </select>
+          </label>
         </div>
-      </div>
+      </section>
+
+      <div v-if="actionError" class="alert alert-error" role="alert">{{ actionError }}</div>
+
+      <section class="card">
+        <div v-if="isLoading" class="card-body">
+          <div v-for="row in 4" :key="row" class="skeleton" style="height: 20px; margin-bottom: 12px" />
+        </div>
+        <div v-else-if="loadError" class="card-body">
+          <div class="alert alert-error" role="alert">{{ loadError }}</div>
+          <button type="button" class="btn btn-secondary" style="margin-top: 12px" @click="load">Coba lagi</button>
+        </div>
+        <div v-else-if="filtered.length === 0" class="empty">
+          <strong>Belum ada kategori</strong>
+          Tambahkan kategori pertama, mis. ATK, Makanan, Minuman.
+        </div>
+        <div v-else class="table-wrap">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Nama</th>
+                <th>Deskripsi</th>
+                <th class="num">Produk aktif</th>
+                <th>Status</th>
+                <th class="actions">Aksi</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="category in filtered" :key="category.id">
+                <td class="strong">{{ category.name }}</td>
+                <td class="muted">{{ category.description || '-' }}</td>
+                <td class="num">
+                  <RouterLink :to="{ path: '/products', query: { categoryId: category.id } }">
+                    {{ category.productCount }}
+                  </RouterLink>
+                </td>
+                <td>
+                  <span class="badge" :class="category.isActive ? 'badge-success' : 'badge-neutral'">
+                    {{ category.isActive ? 'Aktif' : 'Nonaktif' }}
+                  </span>
+                </td>
+                <td class="actions">
+                  <button type="button" class="btn btn-ghost btn-sm" @click="openEdit(category)">Ubah</button>
+                  <button
+                    v-if="category.isActive"
+                    type="button"
+                    class="btn btn-ghost btn-sm text-danger"
+                    @click="deactivate(category)"
+                  >
+                    Nonaktifkan
+                  </button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
     </div>
-  </div>
+
+    <div v-if="modalOpen" class="modal-backdrop" @click.self="modalOpen = false">
+      <form class="modal" role="dialog" aria-modal="true" aria-labelledby="category-modal-title" @submit.prevent="save">
+        <div class="modal-header">
+          <h2 id="category-modal-title" class="card-title">{{ editing ? 'Ubah kategori' : 'Tambah kategori' }}</h2>
+          <button type="button" class="btn btn-ghost btn-sm" aria-label="Tutup" @click="modalOpen = false">✕</button>
+        </div>
+        <div class="modal-body">
+          <div v-if="formError" class="alert alert-error" role="alert">{{ formError }}</div>
+          <label class="field">
+            <span class="label">Nama <span class="req">*</span></span>
+            <input v-model="form.name" class="input" maxlength="100" required autofocus>
+          </label>
+          <label class="field">
+            <span class="label">Deskripsi</span>
+            <textarea v-model="form.description" class="textarea" maxlength="500" />
+          </label>
+          <label v-if="editing" style="display: flex; gap: 8px; align-items: center">
+            <input v-model="form.isActive" type="checkbox">
+            <span>Kategori aktif</span>
+          </label>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" @click="modalOpen = false">Batal</button>
+          <button type="submit" class="btn btn-primary" :disabled="saving">{{ saving ? 'Menyimpan…' : 'Simpan' }}</button>
+        </div>
+      </form>
+    </div>
+  </main>
 </template>

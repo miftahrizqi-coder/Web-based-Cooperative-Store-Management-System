@@ -29,8 +29,8 @@ class Member(Document):
 
     class Settings:
         name = "members"
+        # memberNumber: index unik dibuat di core/database.py
         indexes = [
-            "memberNumber",
             "name",
             "status",
         ]

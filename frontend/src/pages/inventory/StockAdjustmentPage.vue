@@ -53,7 +53,7 @@ const filteredProducts = computed(() => {
 })
 
 const selectedProduct = computed(() =>
-  products.value.find((p) => p.product_id === selectedProductId.value),
+  products.value.find((p) => p.productId === selectedProductId.value),
 )
 
 const stockBefore = computed(() => selectedProduct.value?.stock ?? 0)
@@ -227,7 +227,7 @@ async function submitAdjustment() {
   const productUnit = unit.value
 
   const payload: StockAdjustmentPayload = {
-    product_id: selectedProductId.value,
+    productId: selectedProductId.value,
     quantity: quantity.value as number,
     reason: reason.value.trim(),
   }
@@ -237,7 +237,7 @@ async function submitAdjustment() {
 
     successMessage.value =
       `Adjustment ${productName} berhasil dicatat. ` +
-      `Stok berubah dari ${fmt(result.stock_before)} menjadi ${fmt(result.stock_after)}` +
+      `Stok berubah dari ${fmt(result.stockBefore)} menjadi ${fmt(result.stockAfter)}` +
       `${productUnit ? ' ' + productUnit : ''}.`
 
     showConfirmation.value = false
@@ -451,8 +451,8 @@ onMounted(() => loadProducts())
                   <option value="">Pilih produk</option>
                   <option
                     v-for="product in filteredProducts"
-                    :key="product.product_id"
-                    :value="product.product_id"
+                    :key="product.productId"
+                    :value="product.productId"
                   >
                     {{ product.name }} — {{ product.sku }} (stok {{ fmt(product.stock) }})
                   </option>
